@@ -22,12 +22,14 @@ Trade-offs to know about:
 - **Sampling parameters are ignored.** Settings like `temperature` and `max_tokens` cannot be forwarded through OpenCode. The gateway accepts them and lists them in an `x-gateway-ignored-params` response header.
 - **Upstream terms apply.** Availability, rate limits and the model list are set by OpenCode Zen and can change at any time. Free models may have their own data policies; see the [Zen docs](https://opencode.ai/docs/zen/).
 
+> **Fair use.** zengate talks to Zen only through the official OpenCode CLI and never bypasses its limits or free-tier checks. You are responsible for following OpenCode's terms and fair-use expectations. Run it for yourself or your team, not as a public or resold service.
+
 ## Quick start
 
 Requires **Node.js 24+**.
 
 ```bash
-git clone <this repo> zengate
+git clone https://github.com/developingchet/zengate.git
 cd zengate
 npm ci
 npm start
@@ -158,6 +160,8 @@ The key persists in the `/data` volume. You can pass `-e API_KEY=...` instead. P
 - Rate limiting, a bounded queue, body and attachment size limits, and per-request timeouts all apply. A request with `n` choices uses `n` concurrency slots, and slots are always released on disconnect or timeout.
 - Stored responses (`previous_response_id`, `GET /v1/responses/{id}`) are visible only to the API key that created them.
 - The gateway sends no telemetry and never logs request bodies. OpenCode's auto-update and session sharing are disabled.
+
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## Troubleshooting
 
