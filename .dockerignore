@@ -1,0 +1,54 @@
+# The image only needs package*.json, index.js, src/ and scripts/setup.mjs
+# (see Dockerfile). Everything else stays out of the build context.
+
+# Secrets and local config
+config.json
+config.*.json
+.env
+.env.*
+.npmrc
+.yarnrc
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Repository and tooling
+.git/
+.gitignore
+.gitattributes
+.github/
+.dockerignore
+Dockerfile
+.claude/
+.cursor/
+.codex/
+.vscode/
+.idea/
+deploy/
+test/
+*.md
+
+# Dependencies, output and clutter
+node_modules/
+coverage/
+.nyc_output/
+dist/
+build/
+out/
+.cache/
+tmp/
+temp/
+*.log
+*.log.*
+*.tmp
+*.temp
+*.tgz
+*.zip
+*.bak
+*.orig
+*.swp
+*~
+.DS_Store
+Thumbs.db

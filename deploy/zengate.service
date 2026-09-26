@@ -1,0 +1,53 @@
+# systemd unit for zengate.
+#
+#   sudo useradd --system --home /nonexistent --shell /usr/sbin/nologin zengate
+#   sudo git clone <repo> /opt/zengate && cd /opt/zengate && sudo npm ci --omit=dev
+#   sudo cp deploy/zengate.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now zengate
+#   sudo journalctl -u zengate    # the generated API key is printed once here
+#
+# The key is stored in /var/lib/zengate/config.json (mode 0600).
+# Optional overrides go in /etc/zengate.env (KEY=value per line).
+
+[Unit]
+Description=zengate (OpenAI-compatible API for OpenCode Zen, keyless)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zengate
+Group=zengate
+WorkingDirectory=/opt/zengate
+ExecStart=/usr/bin/node /opt/zengate/index.js
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=20
+
+StateDirectory=zengate
+StateDirectoryMode=0700
+Environment=CONFIG_FILE=/var/lib/zengate/config.json
+Environment=HOST=127.0.0.1
+Environment=PORT=8083
+EnvironmentFile=-/etc/zengate.env
+
+# Hardening. The OpenCode backend only needs /tmp (private) and the network.
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

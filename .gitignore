@@ -1,0 +1,109 @@
+# ── Secrets and local config ─────────────────────────────────────────
+# config.json holds the generated gateway API key: never commit it.
+config.json
+config.*.json
+!config.json.example
+.env
+.env.*
+!.env.example
+.npmrc
+.yarnrc
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+secrets.*
+credentials.*
+
+# ── Dependencies and package output ──────────────────────────────────
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+*.tgz
+*.tar.gz
+*.zip
+
+# ── Logs, runtime and debug output ───────────────────────────────────
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.pid
+*.pid.lock
+*.heapsnapshot
+*.cpuprofile
+.node_repl_history
+report.*.json
+
+# ── Tests and coverage ───────────────────────────────────────────────
+coverage/
+.nyc_output/
+lcov.info
+*.lcov
+test-results/
+playwright-report/
+htmlcov/
+
+# ── Build output and caches ──────────────────────────────────────────
+dist/
+build/
+out/
+.cache/
+.eslintcache
+tmp/
+temp/
+*.tmp
+*.temp
+
+# ── Editors and IDEs ─────────────────────────────────────────────────
+.vscode/
+.idea/
+.history/
+*.code-workspace
+*.sublime-*
+*.swp
+*.swo
+*~
+
+# ── AI assistants and local agent tooling ────────────────────────────
+.claude/
+CLAUDE.local.md
+.cursor/
+.codex/
+.aider*
+.windsurf/
+.continue/
+.opencode/
+
+# ── Local working notes ──────────────────────────────────────────────
+reviews/
+audits/
+reports/
+.planning/
+scratch/
+
+# ── Merge leftovers ──────────────────────────────────────────────────
+*.bak
+*.orig
+*.rej
+*.out
+*.err
+
+# ── Docker local overrides ───────────────────────────────────────────
+docker-compose.override.yml
+compose.override.yaml
+
+# ── OS files ─────────────────────────────────────────────────────────
+.DS_Store
+._*
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+NUL

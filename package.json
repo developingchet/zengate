@@ -1,0 +1,45 @@
+{
+  "name": "zengate",
+  "version": "2.0.0",
+  "description": "Keyless OpenAI-compatible API (Chat Completions + Responses) for OpenCode's free Zen models, served through the real OpenCode CLI.",
+  "main": "index.js",
+  "type": "module",
+  "bin": {
+    "zengate": "index.js"
+  },
+  "files": [
+    "index.js",
+    "src/",
+    "scripts/setup.mjs",
+    "config.json.example"
+  ],
+  "scripts": {
+    "start": "node index.js",
+    "setup": "node scripts/setup.mjs",
+    "lint": "node scripts/quality.mjs",
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "test:coverage": "node --test --experimental-test-coverage \"test/**/*.test.mjs\"",
+    "test:live": "node scripts/live-e2e.mjs",
+    "verify": "npm run lint && npm test",
+    "audit": "npm audit --omit=dev --audit-level=high"
+  },
+  "keywords": [
+    "opencode",
+    "openai",
+    "zen",
+    "keyless",
+    "proxy",
+    "gateway",
+    "chat-completions",
+    "responses-api"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "opencode-ai": "^1.18.32"
+  }
+}
