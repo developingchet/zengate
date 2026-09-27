@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-09-27
+
+### Added
+- Property-based tests (fast-check) for stop sequences, the SSRF address guard and CORS header handling. They run hundreds of generated inputs per property.
+
 ### Security
 - A weekly Trivy scan of the published Docker Hub image (amd64 and arm64) reports to the Security tab. CI and the Socket scan of `main` also run weekly.
 - OpenSSF Scorecard grades the repository's security practices weekly, with a badge in the README.
@@ -61,7 +66,8 @@ First public release (npm only).
 - Stored responses are scoped to the API key that created them.
 - Concurrency slots are weighted by `n` and always released on timeout or disconnect. A request fails fast when the upstream keeps failing.
 
-[Unreleased]: https://github.com/developingchet/zengate/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/developingchet/zengate/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/developingchet/zengate/releases/tag/v1.0.4
 [1.0.3]: https://github.com/developingchet/zengate/releases/tag/v1.0.3
 [1.0.2]: https://github.com/developingchet/zengate/releases/tag/v1.0.2
 [1.0.1]: https://github.com/developingchet/zengate/releases/tag/v1.0.1

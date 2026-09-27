@@ -34,7 +34,7 @@ npm run audit
 
 - Keep the design goals in mind: easy to set up, secure by default, fast, and faithful to the OpenAI API.
 - Never add code that imitates OpenCode or bypasses Zen's free-tier checks. zengate only talks to Zen through the real OpenCode CLI.
-- Add or update tests with every behaviour change. Tests go in `test/` and use `node:test`.
+- Add or update tests with every behaviour change. Tests go in `test/` and use `node:test`. Property-based tests use [fast-check](https://fast-check.dev) and live in `test/*.test.js` (the `.js` extension lets OpenSSF Scorecard detect them).
 - Keep files focused and under 800 lines, and functions small.
 - Validate input at the boundary and return errors in the OpenAI error format.
 - Never log request bodies or keys.
