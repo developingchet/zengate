@@ -55,9 +55,14 @@ jobs:
         if: steps.key.outputs.present == 'true'
         env:
           GH_API_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          args=(--target-path "$GITHUB_WORKSPACE" --scm github --pr-number "$PR_NUMBER")
+          args=(--target-path "$GITHUB_WORKSPACE")
+          # PR comments and commit statuses only apply to pull requests; on
+          # other events the CLI would look up comments for a nonexistent PR.
+          if [ -n "$PR_NUMBER" ]; then
+            args+=(--scm github --pr-number "$PR_NUMBER")
+          fi
           if [ "$GITHUB_REF" = "refs/heads/main" ]; then
             args+=(--default-branch --disable-blocking)
           fi
