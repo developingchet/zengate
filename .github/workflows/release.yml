@@ -139,12 +139,10 @@ jobs:
         run: npm install -g npm@latest
       - run: npm ci
       - name: Publish
-        # Uses trusted publishing (OIDC), configured on npmjs.com for this
-        # workflow. An NPM_TOKEN secret is only used if you add one.
-        # A version that is already on npm is skipped, so a tag can be re-run
-        # (or released to Docker Hub after a manual npm publish).
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # Trusted publishing only: npmjs.com trusts this workflow (package
+        # Settings > Trusted Publisher), so no npm token is stored anywhere.
+        # Provenance is attached automatically. A version that is already on
+        # npm is skipped, so a release tag can be re-run safely.
         run: |
           name="$(node -p "require('./package.json').name")"
           version="$(node -p "require('./package.json').version")"
