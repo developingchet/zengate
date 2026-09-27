@@ -4,8 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-09-26
+
 ### Fixed
-- The Socket badge in the README renders on GitHub.
+- The Socket badge in the README renders on GitHub and npm.
 - The Socket scan of `main` records a baseline scan instead of failing while looking up pull request comments.
 
 ## [1.0.2] - 2026-09-26
@@ -53,7 +55,8 @@ First public release (npm only).
 - Stored responses are scoped to the API key that created them.
 - Concurrency slots are weighted by `n` and always released on timeout or disconnect. A request fails fast when the upstream keeps failing.
 
-[Unreleased]: https://github.com/developingchet/zengate/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/developingchet/zengate/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/developingchet/zengate/releases/tag/v1.0.3
 [1.0.2]: https://github.com/developingchet/zengate/releases/tag/v1.0.2
 [1.0.1]: https://github.com/developingchet/zengate/releases/tag/v1.0.1
 [1.0.0]: https://www.npmjs.com/package/zengate/v/1.0.0
