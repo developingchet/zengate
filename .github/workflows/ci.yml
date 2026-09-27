@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Mondays: catch new npm advisories, base image CVEs and runner changes
+    # even in weeks with no commits.
+    - cron: '57 5 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -11,7 +15,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Only superseded pull request runs are cancelled; main keeps every run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
