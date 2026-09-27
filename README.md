@@ -3,6 +3,7 @@
 [![CI](https://github.com/developingchet/zengate/actions/workflows/ci.yml/badge.svg)](https://github.com/developingchet/zengate/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/zengate)](https://www.npmjs.com/package/zengate)
 [![Docker Hub](https://img.shields.io/docker/v/developingchet/zengate?label=docker&sort=semver)](https://hub.docker.com/r/developingchet/zengate)
+[![Socket](https://socket.dev/api/badge/npm/package/zengate)](https://socket.dev/npm/package/zengate)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 An **OpenAI-compatible API for OpenCode's free Zen models: no Zen account or upstream API key needed.**

@@ -1,0 +1,14 @@
+# Socket.dev configuration (https://docs.socket.dev/docs/socket-yml).
+# No alert types are disabled: expected alerts are triaged in SECURITY.md
+# ("Dependency alerts") instead of hidden here.
+version: 2
+
+# Only dependency changes trigger pull request alerts.
+triggerPaths:
+  - package.json
+  - package-lock.json
+
+githubApp:
+  enabled: true
+  pullRequestAlertsEnabled: true
+  dependencyOverviewEnabled: true

@@ -1,7 +1,11 @@
 {
   "name": "zengate",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Keyless OpenAI-compatible API (Chat Completions + Responses) for OpenCode's free Zen models, served through the real OpenCode CLI.",
+  "author": {
+    "name": "developingchet",
+    "url": "https://github.com/developingchet"
+  },
   "homepage": "https://github.com/developingchet/zengate#readme",
   "repository": {
     "type": "git",
@@ -46,12 +50,16 @@
     "self-hosted"
   ],
   "license": "MIT",
-  "engines": {
-    "node": ">=24.0.0"
-  },
   "dependencies": {
-    "cors": "^2.8.5",
     "express": "^5.1.0",
     "opencode-ai": "^1.18.32"
+  },
+  "overrides": {
+    "es-define-property": "npm:@socketregistry/es-define-property@^1",
+    "safer-buffer": "npm:@socketregistry/safer-buffer@^1",
+    "side-channel": "npm:@socketregistry/side-channel@^1"
+  },
+  "engines": {
+    "node": ">=24.0.0"
   }
 }
