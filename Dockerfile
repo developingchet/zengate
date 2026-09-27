@@ -1,10 +1,19 @@
 FROM node:24-slim
 
+LABEL org.opencontainers.image.title="zengate" \
+      org.opencontainers.image.description="Keyless OpenAI-compatible API for OpenCode Zen free models" \
+      org.opencontainers.image.source="https://github.com/developingchet/zengate" \
+      org.opencontainers.image.licenses="MIT"
+
 ENV NODE_ENV=production
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+# npm is only needed to install dependencies. Removing it (and corepack)
+# keeps its bundled packages, and their CVEs, out of the runtime image.
+RUN npm ci --omit=dev && npm cache clean --force \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+       /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /root/.npm
 COPY index.js ./
 COPY src ./src
 COPY scripts/setup.mjs ./scripts/setup.mjs

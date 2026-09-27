@@ -68,7 +68,9 @@ describe('loadOrProvisionConfig', () => {
     });
 
     it('raises a ConfigError when config.json cannot be written', () => {
-        const configPath = path.join(tmp, 'no-such-dir', 'nested', 'config.json');
+        const blocker = path.join(tmp, 'a-file-not-a-dir');
+        fs.writeFileSync(blocker, '');
+        const configPath = path.join(blocker, 'config.json');
         assert.throws(
             () => loadOrProvisionConfig({ configPath, env: {}, logger: silentLogger, print: () => {} }),
             (error) => error instanceof ConfigError && /could not be written/.test(error.message) && /ALLOW_NO_AUTH/.test(error.message),

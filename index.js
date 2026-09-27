@@ -1,15 +1,48 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadOrProvisionConfig, securityWarnings } from './src/bootstrap.js';
+import { HELP_TEXT, parseCommand, runSetup } from './src/cli.js';
 import { ConfigError } from './src/config.js';
 import { startGateway } from './src/gateway.js';
 import { createLogger } from './src/logger.js';
+import { defaultConfigPath } from './src/paths.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const configPath = process.env.CONFIG_FILE || path.join(root, 'config.json');
+const configPath = defaultConfigPath({ root });
+const out = (line = '') => process.stdout.write(`${line}\n`);
+
+/** Handle the non-server commands. Returns an exit code, or null to start the server. */
+function runCommand(args) {
+    const { command, flags } = parseCommand(args);
+    if (command === 'serve') return null;
+    if (command === 'help') {
+        out(HELP_TEXT);
+        return 0;
+    }
+    if (command === 'version') {
+        out(JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version);
+        return 0;
+    }
+    if (command === 'setup') {
+        try {
+            return runSetup({ configPath, flags, out });
+        } catch (error) {
+            process.stderr.write(`${error.message}\n`);
+            return 1;
+        }
+    }
+    process.stderr.write(`Unknown arguments: ${args.join(' ')}\n\n${HELP_TEXT}\n`);
+    return 2;
+}
 
 async function main() {
+    const exitCode = runCommand(process.argv.slice(2));
+    if (exitCode !== null) {
+        process.exitCode = exitCode;
+        return;
+    }
     const bootLogger = createLogger({ level: process.env.LOG_LEVEL || 'info', json: /^(1|true|yes|on)$/i.test(process.env.LOG_JSON || '') });
     let config;
     try {

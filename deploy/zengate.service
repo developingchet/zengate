@@ -1,7 +1,7 @@
 # systemd unit for zengate.
 #
 #   sudo useradd --system --home /nonexistent --shell /usr/sbin/nologin zengate
-#   sudo git clone <repo> /opt/zengate && cd /opt/zengate && sudo npm ci --omit=dev
+#   sudo git clone https://github.com/developingchet/zengate.git /opt/zengate && cd /opt/zengate && sudo npm ci --omit=dev
 #   sudo cp deploy/zengate.service /etc/systemd/system/
 #   sudo systemctl daemon-reload && sudo systemctl enable --now zengate
 #   sudo journalctl -u zengate    # the generated API key is printed once here

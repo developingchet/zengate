@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
 import { ConfigError, isLoopbackHost, loadConfig, needsApiKey, readConfigFile } from './config.js';
 
 export const KEY_PREFIX = 'sk-zg-';
@@ -8,8 +9,9 @@ export function generateApiKey() {
     return `${KEY_PREFIX}${crypto.randomBytes(24).toString('base64url')}`;
 }
 
-/** Write config.json with owner-only permissions (atomic rename). */
+/** Write config.json with owner-only permissions (atomic rename), creating its directory if needed. */
 export function writeConfigFile(filePath, data) {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
     const temp = `${filePath}.${process.pid}.tmp`;
     fs.writeFileSync(temp, `${JSON.stringify(data, null, 4)}\n`, { mode: 0o600 });
     fs.renameSync(temp, filePath);
@@ -32,17 +34,17 @@ export function loadOrProvisionConfig({ configPath, env = process.env, logger, p
     } catch (error) {
         throw new ConfigError([
             `no API_KEY is configured and ${configPath} could not be written (${error.code || error.message}).`,
-            'Set API_KEY (at least 16 characters, e.g. from `npm run setup -- --print`) in the environment,',
+            'Set API_KEY (at least 16 characters, e.g. from `zengate setup --print`) in the environment, or set CONFIG_FILE to a writable path,',
             'or set ALLOW_NO_AUTH=true to deliberately serve without a key.',
         ]);
     }
     print('');
-    print('  Created a gateway API key (saved to config.json):');
+    print(`  Created a gateway API key (saved to ${configPath}):`);
     print('');
     print(`    ${key}`);
     print('');
     print('  Use it as the OpenAI API key in your client. It is not shown again;');
-    print('  read config.json or run `npm run setup -- --rotate` to replace it.');
+    print('  read it from that file, or run `zengate setup --rotate` to replace it.');
     print('');
     logger.debug('Provisioned a new API key', { configPath });
     return loadConfig({ ...fileConfig, API_KEY: key }, env);

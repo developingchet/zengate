@@ -111,12 +111,17 @@ export function createManagedBackend({ opencodePath, logger }) {
     }
 
     function onCrash(code, signal, root) {
-        logger.warn(`OpenCode backend exited (${signal || code}); restarting in ${restartDelay / 1000}s`);
+        // Ctrl+C and service managers signal the whole process group, so OpenCode
+        // can exit just before the gateway starts stopping. Only warn if the
+        // restart actually goes ahead.
+        const reason = signal || code;
+        logger.debug(`OpenCode backend exited (${reason})`);
         removeIsolatedRoot(root);
         const delay = restartDelay;
         restartDelay = Math.min(MAX_RESTART_DELAY_MS, restartDelay * 2);
         setTimeout(() => {
             if (stopping) return;
+            logger.warn(`OpenCode backend exited (${reason}); restarting after ${delay / 1000}s`);
             launch().catch((error) => {
                 logger.error('OpenCode restart failed', { error: error.message });
                 killTree(child);

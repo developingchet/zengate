@@ -1,11 +1,26 @@
 # zengate
 
+[![CI](https://github.com/developingchet/zengate/actions/workflows/ci.yml/badge.svg)](https://github.com/developingchet/zengate/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/zengate)](https://www.npmjs.com/package/zengate)
+[![Docker Hub](https://img.shields.io/docker/v/developingchet/zengate?label=docker&sort=semver)](https://hub.docker.com/r/developingchet/zengate)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 An **OpenAI-compatible API for OpenCode's free Zen models: no Zen account or upstream API key needed.**
 Point any OpenAI SDK or tool at it and use models like `big-pickle`. It supports Chat Completions, the Responses API, streaming, function calling, JSON output and image, audio, video and PDF input.
 
 ```
 your app ──(OpenAI API + gateway key)──▶ zengate ──▶ opencode serve (private, isolated) ──▶ OpenCode Zen free models
 ```
+
+- [How it works](#how-it-works-and-why-it-is-keyless)
+- [Install](#install)
+- [Use it from your client](#use-it-from-your-client)
+- [API compatibility](#api-compatibility)
+- [Configuration](#configuration)
+- [Deployment](#deployment)
+- [Security](#security)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
 
 ## How it works (and why it is keyless)
 
@@ -24,9 +39,48 @@ Trade-offs to know about:
 
 > **Fair use.** zengate talks to Zen only through the official OpenCode CLI and never bypasses its limits or free-tier checks. You are responsible for following OpenCode's terms and fair-use expectations. Run it for yourself or your team, not as a public or resold service.
 
-## Quick start
+## Install
 
-Requires **Node.js 24+**.
+Pick one. All of them need nothing but Node.js 24+ or Docker.
+
+**npx (quickest)**
+
+```bash
+npx zengate
+```
+
+**npm (global command)**
+
+```bash
+npm install -g zengate
+zengate
+```
+
+**Docker**
+
+```bash
+docker run -d --name zengate -p 127.0.0.1:8083:8083 -v zengate:/data developingchet/zengate
+docker logs zengate   # shows the generated key once
+```
+
+Images are published for `linux/amd64` and `linux/arm64`, tagged `latest`, `1`, `1.2` and `1.2.3`.
+
+**Docker Compose**
+
+```yaml
+services:
+  zengate:
+    image: developingchet/zengate:1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8083:8083"
+    volumes:
+      - zengate:/data
+volumes:
+  zengate:
+```
+
+**From source**
 
 ```bash
 git clone https://github.com/developingchet/zengate.git
@@ -35,10 +89,12 @@ npm ci
 npm start
 ```
 
-On first start the gateway creates `config.json` with a random API key and prints it:
+### First start
+
+The gateway creates a config file with a random API key and prints the key once:
 
 ```
-  Created a gateway API key (saved to config.json):
+  Created a gateway API key (saved to /home/you/.config/zengate/config.json):
 
     sk-zg-...
 
@@ -46,12 +102,53 @@ OpenAI-compatible API on http://127.0.0.1:8083/v1 (auth: API key)
 7 models: big-pickle, ...
 ```
 
-Use that key and base URL in any OpenAI client:
+Where the config file lives:
+
+| How you run it | Config file |
+|---|---|
+| From source | `config.json` in the project folder |
+| npm / npx on Linux | `$XDG_CONFIG_HOME/zengate/config.json` (usually `~/.config/zengate/config.json`) |
+| npm / npx on macOS | `~/Library/Application Support/zengate/config.json` |
+| npm / npx on Windows | `%APPDATA%\zengate\config.json` |
+| Docker | `/data/config.json` (the volume) |
+
+Set `CONFIG_FILE` to use any other path.
+
+Key commands (`npm run setup -- <flag>` from a source checkout):
+
+```bash
+zengate setup            # create a key if none exists
+zengate setup --rotate   # replace the key
+zengate setup --print    # print a fresh key without saving it (for env vars and secret stores)
+zengate --help
+```
+
+### Running without a key
+
+If only trusted local programs can reach the port, you can turn authentication off explicitly:
+
+```bash
+ALLOW_NO_AUTH=true zengate
+```
+
+The gateway warns at startup when auth is off. Keep `HOST=127.0.0.1` in that case: with auth off, any local process can use the API, and so can any web page if you enable CORS.
+
+## Use it from your client
+
+Anything that accepts an OpenAI base URL and API key works: the official SDKs, LangChain, LlamaIndex, Open WebUI, Continue, Aider, LiteLLM and so on.
+
+| Setting | Value |
+|---|---|
+| Base URL | `http://127.0.0.1:8083/v1` |
+| API key | the `sk-zg-...` key from first start |
+| Model | an id from `GET /v1/models`, for example `big-pickle` |
 
 ```bash
 export OPENAI_BASE_URL=http://127.0.0.1:8083/v1
 export OPENAI_API_KEY=sk-zg-...
 ```
+
+**Python**
 
 ```python
 from openai import OpenAI
@@ -60,26 +157,22 @@ r = client.chat.completions.create(model="big-pickle", messages=[{"role": "user"
 print(r.choices[0].message.content)
 ```
 
+**JavaScript / TypeScript**
+
+```js
+import OpenAI from "openai";
+const client = new OpenAI(); // reads the two variables above
+const stream = await client.responses.create({ model: "big-pickle", input: "Write a haiku about gates.", stream: true });
+for await (const event of stream) if (event.type === "response.output_text.delta") process.stdout.write(event.delta);
+```
+
+**curl**
+
 ```bash
 curl http://127.0.0.1:8083/v1/chat/completions \
   -H "Authorization: Bearer $OPENAI_API_KEY" -H "Content-Type: application/json" \
   -d '{"model":"big-pickle","messages":[{"role":"user","content":"Hello!"}]}'
 ```
-
-`GET /v1/models` lists what is currently available. Key helpers:
-- `npm run setup` creates a key if none exists.
-- `npm run setup -- --rotate` replaces it.
-- `npm run setup -- --print` prints a fresh key for use in environment variables.
-
-### Running without a key
-
-If only trusted local programs can reach the port, you can turn authentication off explicitly:
-
-```bash
-ALLOW_NO_AUTH=true npm start
-```
-
-The gateway warns at startup when auth is off. Keep `HOST=127.0.0.1` in that case: with auth off, any local process can use the API, and so can any web page if you enable CORS.
 
 ## API compatibility
 
@@ -112,7 +205,7 @@ Text files (plain text, markdown, JSON, CSV and so on) are inlined as text, so e
 
 ## Configuration
 
-Set values as environment variables or in `config.json` (same names). Environment variables win. Invalid values stop startup with a clear message.
+Set values as environment variables or in the config file (same names; see [`config.json.example`](config.json.example)). Environment variables win. Invalid values stop startup with a clear message.
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -127,33 +220,38 @@ Set values as environment variables or in `config.json` (same names). Environmen
 | `CORS_ORIGINS` | none | Browser origins allowed to call the API (explicit list; `*` is refused). |
 | `TRUST_PROXY` | `0` | Number of reverse-proxy hops to trust for client IPs. |
 | `LOG_LEVEL` / `LOG_JSON` | `info` / `false` | Log verbosity, and JSON-lines output. |
+| `OPENCODE_AGENT` | `plan` | The OpenCode agent each session uses. |
 | `OPENCODE_PATH` | bundled | Use a different `opencode` binary. |
 | `OPENCODE_SERVER_URL` | none | Attach to an existing `opencode serve` instead of starting one (see below). |
 | `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD` | `opencode` / none | Basic auth for that server. |
 | `ALLOW_INSECURE_BACKEND_HTTP` | `false` | Allow a non-loopback `http://` server URL. |
-| `CONFIG_FILE` | `./config.json` | Where the config file lives (environment variable only). |
+| `CONFIG_FILE` | see [First start](#first-start) | Where the config file lives (environment variable only). |
 
 **Attach mode.** `OPENCODE_SERVER_URL` uses a server you run yourself. The gateway can only reject tool calls that server *asks* permission for; that happens in its own sessions and their subagents. It trusts the server's own permission config, plugins and MCP servers. If that config allows tools without asking, they will run. Use it only with a server configured like the managed one (every permission set to `"ask"`). The managed default is safer. Remote servers must use `https://` unless you set `ALLOW_INSECURE_BACKEND_HTTP`.
 
 ## Deployment
 
-**Docker**
-
-```bash
-docker build -t zengate .
-docker run -d --name zengate -p 127.0.0.1:8083:8083 -v zengate:/data zengate
-docker logs zengate   # shows the generated key once
-```
-
-The key persists in the `/data` volume. You can pass `-e API_KEY=...` instead. Publish the port on `127.0.0.1`, or put a TLS reverse proxy in front before exposing it to a network.
+**Docker.** The key persists in the `/data` volume. You can pass `-e API_KEY=...` instead. Publish the port on `127.0.0.1`, or put a TLS reverse proxy in front before exposing it to a network.
 
 **systemd.** See [`deploy/zengate.service`](deploy/zengate.service). It runs as an unprivileged user with a hardened sandbox, and the key goes in `/var/lib/zengate/config.json`.
 
 **Behind a reverse proxy.** Set `TRUST_PROXY=1` (or however many hops you have) so rate limits apply per real client. Disable response buffering for streaming. The gateway already sends `X-Accel-Buffering: no` for nginx.
 
-## Security summary
+### Verifying releases
 
-- The API key is required unless you set `ALLOW_NO_AUTH`. Keys are compared in constant time, `config.json` is written with mode `0600`, and keys are never logged.
+Docker images are signed with [cosign](https://github.com/sigstore/cosign) (keyless, from this repository's release workflow) and carry a CycloneDX SBOM attestation:
+
+```bash
+cosign verify developingchet/zengate:1 \
+  --certificate-identity-regexp '^https://github.com/developingchet/zengate/.github/workflows/release.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+npm releases are published from GitHub Actions with [provenance](https://docs.npmjs.com/generating-provenance-statements); `npm audit signatures` checks it. Each GitHub release also lists SHA-256 checksums.
+
+## Security
+
+- The API key is required unless you set `ALLOW_NO_AUTH`. Keys are compared in constant time, the config file is written with mode `0600`, and keys are never logged.
 - The gateway binds to loopback by default and warns when it listens elsewhere, because traffic is plain HTTP, so put TLS in front.
 - OpenCode tools are never executed, and OpenCode runs isolated from your home directory and configuration.
 - Attachment URLs must be `https` and resolve to public addresses. Loopback, private, link-local and similar ranges are refused, which blocks SSRF into your network.
@@ -167,13 +265,14 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 | Symptom | Fix |
 |---|---|
-| `401 invalid_api_key` | Send `Authorization: Bearer <key from config.json>`. |
+| `401 invalid_api_key` | Send `Authorization: Bearer <key from the config file>`. |
 | `404 model_not_found` | Use an id from `GET /v1/models`. The free model list changes over time. |
 | `400 unsupported_modality` | That model can't take this input kind. Pick one that does. |
 | `429 server_busy` / `rate_limit_exceeded` | Raise `MAX_CONCURRENT` / `MAX_QUEUE` / `RATE_LIMIT_PER_MINUTE`, or slow down. |
 | `429 upstream_rate_limited`, `502 upstream_*` | OpenCode Zen is limiting or failing. Retry later or try another model. |
 | `503 backend_unavailable` | OpenCode is still starting or restarting. Check `GET /ready`. Run with `LOG_LEVEL=debug` to see OpenCode's own logs. |
 | Startup: `Port ... in use` | Another process has the port. Set `PORT`. |
+| Startup: `could not be written` | The config folder is read-only. Set `API_KEY`, or point `CONFIG_FILE` somewhere writable. |
 
 ## Development
 
@@ -185,11 +284,12 @@ GATEWAY_URL=http://127.0.0.1:8083/v1 API_KEY=sk-zg-... npm run test:live   # rea
 ```
 
 Code map:
+- `index.js` and `src/cli.js`: the `zengate` command.
 - `src/opencode/`: backend supervisor, HTTP client, event hub, session runner and model catalog.
 - `src/openai/`: request parsing, prompt building, streaming, and the Chat and Responses handlers.
 - `src/server/`: Express app, auth, limits and errors.
 
-See [CHANGELOG.md](CHANGELOG.md) for release notes.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose changes and cut releases, and [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 ## License
 

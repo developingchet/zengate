@@ -17,8 +17,11 @@ First public release.
 - `GET /v1/models`, `GET /v1/models/{id}`, `GET`/`DELETE /v1/responses/{id}`, `/health`, `/ready` and `/metrics`.
 - An API key is required by default. One is generated on first start, saved to `config.json` (mode 0600) and printed once. `ALLOW_NO_AUTH=true` turns auth off explicitly.
 - Plain configuration names such as `HOST`, `PORT` and `MAX_CONCURRENT`. Unknown keys and invalid values stop startup with a clear message.
-- Docker image with a `/data` volume for the key, a hardened systemd unit, and a CI matrix on Linux, Windows and macOS.
-- 299 automated tests (unit, plus integration against a fake OpenCode server) and a live end-to-end script (`npm run test:live`).
+- A `zengate` command (`npx zengate`, `npm install -g zengate`) with `setup`, `--help` and `--version`. When installed from npm, the config file lives in the per-user config directory.
+- Docker images for `linux/amd64` and `linux/arm64` on Docker Hub (`developingchet/zengate`), with a `/data` volume for the key.
+- Signed releases: images are scanned with Trivy, signed with cosign and carry an SBOM attestation; npm packages are published with provenance; GitHub releases include checksums.
+- A hardened systemd unit, and a CI matrix on Linux, Windows and macOS.
+- 309 automated tests (unit, plus integration against a fake OpenCode server) and a live end-to-end script (`npm run test:live`).
 
 ### Security
 - OpenCode tool calls are always rejected, including in subagent sessions, so nothing ever executes on the host.

@@ -1,0 +1,52 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For security problems, use the Security tab instead (see SECURITY.md).
+        Remove API keys and anything private from logs before pasting them.
+  - type: input
+    id: version
+    attributes:
+      label: zengate version
+      description: Output of `zengate --version`, the Docker tag, or the commit.
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run it?
+      options: [Docker, npm / npx, From source, systemd, Other]
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and Node.js version
+      placeholder: Ubuntu 24.04, Node 24.8
+  - type: input
+    id: client
+    attributes:
+      label: Client and model
+      placeholder: openai-python 2.x, big-pickle
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: A minimal request (curl or code) is ideal.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Gateway output, ideally with `LOG_LEVEL=debug`.
+      render: text
