@@ -48,7 +48,7 @@ Out of scope:
 
 - Releases are built only in GitHub Actions from a version tag. Docker images are scanned with Trivy, signed with cosign and carry an SBOM attestation; npm packages are published through npm trusted publishing with provenance. See [Verifying releases](README.md#verifying-releases).
 - Every dependency install in CI goes through Socket Firewall, pull requests are scanned by Socket and CodeQL, and Dependabot keeps npm packages, GitHub Actions and the Docker base image current. All actions are pinned to commit SHAs.
-- Every week, Trivy rescans the published Docker Hub image (amd64 and arm64) and reports findings in the repository's Security tab. The full CI (tests, `npm audit`, image build and scan) and the Socket scan of `main` also run weekly, so new advisories surface even without new commits. [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/developingchet/zengate) grades the repository's security practices every week.
+- Every week, Trivy rescans the published Docker Hub image (amd64 and arm64) and reports findings in the repository's Security tab. The full CI (tests, `npm audit`, image build and scan) also runs weekly, so new advisories surface even without new commits. Socket scans every pull request and every push to `main`. [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/developingchet/zengate) grades the repository's security practices every week.
 - Runtime dependencies are limited to Express and the official `opencode-ai` package. The Docker image drops npm itself after installing them.
 
 ### Dependency alerts

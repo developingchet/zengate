@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+- The Socket scan runs on pull requests and pushes to `main` only, no longer weekly. Dependabot alerts and the weekly CI audit already report new advisories in the lockfile.
+
 ## [1.0.4] - 2026-09-27
 
 ### Added
