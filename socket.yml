@@ -8,7 +8,9 @@ triggerPaths:
   - package.json
   - package-lock.json
 
+# The Socket GitHub App stays silent here: the `socket` workflow
+# (.github/workflows/socket.yml) scans pull requests and posts the only comment.
 githubApp:
-  enabled: true
-  pullRequestAlertsEnabled: true
-  dependencyOverviewEnabled: true
+  enabled: false
+  pullRequestAlertsEnabled: false
+  dependencyOverviewEnabled: false
