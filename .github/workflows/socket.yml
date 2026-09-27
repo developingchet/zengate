@@ -12,6 +12,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: '37 6 * * 1' # Mondays: refresh the baseline scan of main
   workflow_dispatch:
 
 permissions:
