@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+- The Socket badge in the README renders on GitHub.
+- The Socket scan of `main` records a baseline scan instead of failing while looking up pull request comments.
+
 ## [1.0.2] - 2026-09-26
 
 ### Changed
