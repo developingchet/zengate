@@ -1,4 +1,5 @@
-FROM node:24-slim
+# Pinned by digest; Dependabot keeps the digest current.
+FROM node:24-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
 
 LABEL org.opencontainers.image.title="zengate" \
       org.opencontainers.image.description="Keyless OpenAI-compatible API for OpenCode Zen free models" \
