@@ -21,6 +21,15 @@ export function fakeRes() {
             this.body = body;
             return this;
         },
+        vary(field) {
+            const current = this.headers.Vary ? this.headers.Vary.split(', ') : [];
+            if (!current.includes(field)) this.headers.Vary = [...current, field].join(', ');
+            return this;
+        },
+        end() {
+            this.ended = true;
+            return this;
+        },
     });
     return res;
 }

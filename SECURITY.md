@@ -44,6 +44,26 @@ Out of scope:
 - deployments that turn protections off on purpose, such as `ALLOW_NO_AUTH=true` on a public network, or serving plain HTTP without TLS
 - model output content, including prompt injection that only affects the model's own text
 
+## Supply chain
+
+- Releases are built only in GitHub Actions from a version tag. Docker images are scanned with Trivy, signed with cosign and carry an SBOM attestation; npm packages are published through npm trusted publishing with provenance. See [Verifying releases](README.md#verifying-releases).
+- Every dependency install in CI goes through Socket Firewall, pull requests are scanned by Socket and CodeQL, and Dependabot keeps npm packages, GitHub Actions and the Docker base image current. All actions are pinned to commit SHAs.
+- Runtime dependencies are limited to Express and the official `opencode-ai` package. The Docker image drops npm itself after installing them.
+
+### Dependency alerts
+
+Supply-chain scanners such as [Socket](https://socket.dev/npm/package/zengate) report capability alerts for zengate's dependency tree. These are expected and have been reviewed:
+
+| Alert | Source | Why it is expected |
+|---|---|---|
+| Install scripts, native code, shell access | `opencode-ai` and its `opencode-<platform>` packages | This is the official OpenCode CLI. Its install script selects the prebuilt binary for your platform, and zengate runs that binary as its isolated backend. |
+| No license found, new author | `opencode-<platform>` binary packages | Published by the OpenCode maintainers without a license field in their `package.json`; only the one for your platform is installed. |
+| Network, filesystem and environment access, URL strings | Express, `opencode-ai` | Expected for an HTTP server and a CLI launcher. |
+| Uses eval, dynamic require, debug access | `depd`, `debug` and similar Express internals | Long-standing Express dependencies. |
+| Unmaintained | Small, finished Express helpers (for example `ee-first`, `escape-html`, `unpipe`) | Stable packages that have not needed changes in years; Express still depends on them. |
+
+zengate removes what it can: CORS is handled in-house instead of by the `cors` package, and `overrides` replace polyfills in Express's tree with maintained `@socketregistry` packages when zengate is installed from source or run from the Docker image. If an alert looks new or out of place, please report it as described above.
+
 ## Hardening
 
 See the [Security summary](README.md#security-summary) in the README for the defaults and deployment advice.

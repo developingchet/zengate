@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-09-26
+
+### Changed
+- CORS is handled by a small built-in middleware instead of the `cors` package (exact origin matching, no credentials, validated preflight headers).
+- `overrides` replace polyfills in Express's dependency tree with maintained `@socketregistry` packages; the installed dependency tree shrinks from 81 to 65 packages.
+- The npm package lists its author.
+
+### Security
+- Every dependency install in CI and releases goes through Socket Firewall, and a Socket scan checks dependency changes in pull requests.
+- SECURITY.md documents the supply chain and the expected dependency alerts.
+- Added a Code of Conduct and CODEOWNERS.
+
 ## [1.0.1] - 2026-09-26
 
 First release published everywhere: Docker Hub, npm (with provenance) and GitHub Releases.
@@ -37,6 +49,7 @@ First public release (npm only).
 - Stored responses are scoped to the API key that created them.
 - Concurrency slots are weighted by `n` and always released on timeout or disconnect. A request fails fast when the upstream keeps failing.
 
-[Unreleased]: https://github.com/developingchet/zengate/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/developingchet/zengate/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/developingchet/zengate/releases/tag/v1.0.2
 [1.0.1]: https://github.com/developingchet/zengate/releases/tag/v1.0.1
 [1.0.0]: https://www.npmjs.com/package/zengate/v/1.0.0

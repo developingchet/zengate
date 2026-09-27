@@ -44,6 +44,20 @@ npm run audit
 
 - Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`, `perf:`, `ci:`.
 - Keep pull requests focused on one change, fill in the template, and make sure CI is green.
+- `main` is protected: changes land through pull requests, and CI (tests on Linux, Windows and macOS, the Docker build and scan, and CodeQL) must pass.
+- The maintainer aims to review pull requests within **one week**.
+
+## Dependencies
+
+zengate keeps its dependency list small on purpose: Express, and the official `opencode-ai` package. Prefer the Node.js standard library, and discuss a new dependency in an issue before opening the pull request.
+
+- Every `npm ci` in CI goes through [Socket Firewall](https://docs.socket.dev/docs/socket-firewall-free), which blocks known-malicious packages, and the `socket` workflow scans dependency changes in pull requests against the Socket security policy.
+- `package.json` `overrides` swap a few polyfills in Express's dependency tree for their maintained [`@socketregistry`](https://github.com/SocketDev/socket-registry) equivalents. Keep them when updating Express, and remove any that no longer match a package in the tree.
+- Dependabot opens weekly update pull requests for npm, GitHub Actions and the Docker base image.
+
+## Maintainers
+
+- [@developingchet](https://github.com/developingchet) (see [CODEOWNERS](.github/CODEOWNERS))
 
 ## Releasing (maintainers)
 

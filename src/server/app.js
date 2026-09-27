@@ -1,8 +1,8 @@
-import cors from 'cors';
 import express from 'express';
 import { chatCompletionsHandler } from '../openai/chat.js';
 import { modelsHandlers } from '../openai/models.js';
 import { responsesHandlers } from '../openai/responses.js';
+import { corsMiddleware } from './cors.js';
 import { ApiError, sendError, toApiError } from './errors.js';
 import { createLimiter } from './limiter.js';
 import { createMetrics } from './metrics.js';
@@ -68,7 +68,7 @@ export function createApp({ config, logger, backend, hub, catalog, runner, store
     app.set('trust proxy', config.TRUST_PROXY || false);
     app.use(requestId, securityHeaders, metrics.middleware, requestLogger(logger));
     if (config.CORS_ORIGINS.length) {
-        app.use(cors({ origin: config.CORS_ORIGINS, exposedHeaders: EXPOSED_HEADERS, maxAge: 600 }));
+        app.use(corsMiddleware({ origins: config.CORS_ORIGINS, exposedHeaders: EXPOSED_HEADERS, maxAge: 600 }));
     }
 
     app.get('/health', (req, res) => res.json({ status: 'ok' }));
