@@ -1,4 +1,4 @@
-FROM node:24-slim
+FROM node:26-slim
 
 LABEL org.opencontainers.image.title="zengate" \
       org.opencontainers.image.description="Keyless OpenAI-compatible API for OpenCode Zen free models" \
