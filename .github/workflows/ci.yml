@@ -43,10 +43,31 @@ jobs:
           npm ls --omit=dev --depth=0 > /dev/null
       - run: npm run lint
       - run: npm run test:coverage
-      - run: npm run audit
       - name: Check the npm package contents
         if: matrix.os == 'ubuntu-latest'
         run: npm pack --dry-run
+
+  vulncheck:
+    name: Vulnerability Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Socket Firewall (blocks malicious packages during install)
+        uses: SocketDev/action@ba6de6cc0565af1f42295590380973573297e31f # v1.3.2
+        with:
+          mode: firewall
+      - name: Install dependencies through the firewall
+        run: |
+          sfw npm ci
+          npm ls --omit=dev --depth=0 > /dev/null
+      - name: Fail on high or critical advisories in runtime dependencies
+        run: npm run audit
+      - name: Verify registry signatures and provenance of installed packages
+        run: npm audit signatures
 
   docker:
     runs-on: ubuntu-latest
