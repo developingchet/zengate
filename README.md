@@ -249,7 +249,14 @@ cosign verify developingchet/zengate:1 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-npm releases are published from GitHub Actions with [provenance](https://docs.npmjs.com/generating-provenance-statements); `npm audit signatures` checks it. Each GitHub release also lists SHA-256 checksums.
+npm releases are published from GitHub Actions with [provenance](https://docs.npmjs.com/generating-provenance-statements); `npm audit signatures` checks it. Each GitHub release also lists SHA-256 checksums. From 1.0.4, `checksums.txt` and the package tarball are signed with cosign too:
+
+```bash
+cosign verify-blob checksums.txt --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp '^https://github.com/developingchet/zengate/.github/workflows/release.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+sha256sum -c checksums.txt
+```
 
 ## Security
 

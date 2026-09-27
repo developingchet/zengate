@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Security
 - A weekly Trivy scan of the published Docker Hub image (amd64 and arm64) reports to the Security tab. CI and the Socket scan of `main` also run weekly.
 - OpenSSF Scorecard grades the repository's security practices weekly, with a badge in the README.
+- GitHub releases include cosign signatures (`*.sigstore.json`) for `checksums.txt` and the package tarball.
+- The Docker base image is pinned by digest, the Socket CLI is installed from a hash-locked requirements file, and releases no longer install npm from the registry (Node 24 already ships a new enough npm).
 
 ## [1.0.3] - 2026-09-26
 
