@@ -1,6 +1,6 @@
 {
   "name": "zengate",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Keyless OpenAI-compatible API (Chat Completions + Responses) for OpenCode's free Zen models, served through the real OpenCode CLI.",
   "author": {
     "name": "developingchet",
@@ -29,8 +29,8 @@
     "start": "node index.js",
     "setup": "node scripts/setup.mjs",
     "lint": "node scripts/quality.mjs",
-    "test": "node --test \"test/**/*.test.mjs\"",
-    "test:coverage": "node --test --experimental-test-coverage \"test/**/*.test.mjs\"",
+    "test": "node --test \"test/**/*.test.mjs\" \"test/**/*.test.js\"",
+    "test:coverage": "node --test --experimental-test-coverage \"test/**/*.test.mjs\" \"test/**/*.test.js\"",
     "test:live": "node scripts/live-e2e.mjs",
     "verify": "npm run lint && npm test",
     "audit": "npm audit --omit=dev --audit-level=high"
@@ -61,5 +61,8 @@
   },
   "engines": {
     "node": ">=24.0.0"
+  },
+  "devDependencies": {
+    "fast-check": "^4.10.2"
   }
 }
