@@ -55,7 +55,7 @@ jobs:
           GH_API_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
         run: |
-          args=(--target-path "$GITHUB_WORKSPACE" --scm github --pr-number "$PR_NUMBER")
+          args=(--target-path "$GITHUB_WORKSPACE" --scm github --pr-number "$PR_NUMBER" --enable-debug)
           if [ "$GITHUB_REF" = "refs/heads/main" ]; then
             args+=(--default-branch --disable-blocking)
           fi
