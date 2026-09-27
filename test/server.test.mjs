@@ -1,6 +1,5 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import crypto from 'node:crypto';
 import { ApiError, invalidRequest, sendError, toApiError, unsupported } from '../src/server/errors.js';
 import { createLimiter } from '../src/server/limiter.js';
 import { createMetrics } from '../src/server/metrics.js';
@@ -291,10 +290,34 @@ describe('authMiddleware', () => {
         assert.ok(run(auth, first).nextCalled);
         const second = fakeReq({ headers: { authorization: 'bearer   second-key-abcdefghij ' } });
         assert.ok(run(auth, second).nextCalled);
-        const expected = crypto.createHash('sha256').update(KEY).digest('hex').slice(0, 32);
-        assert.equal(first.clientId, expected, 'client id is an opaque hash of the key');
-        assert.match(second.clientId, /^[0-9a-f]{32}$/);
-        assert.notEqual(first.clientId, second.clientId);
+        assert.equal(first.clientId, 'key_0', 'client id names the matched key without revealing it');
+        assert.equal(second.clientId, 'key_1');
+        const tab = fakeReq({ headers: { authorization: `Bearer\t${KEY}` } });
+        assert.ok(run(auth, tab).nextCalled, 'any whitespace separates the scheme');
+    });
+
+    it('rejects malformed Authorization headers as a missing key', () => {
+        for (const authorization of ['Bearer', 'Bearer    ', `Basic ${KEY}`, `Bearer${KEY}`, `Token ${KEY}`]) {
+            const { res, nextCalled } = run(auth, fakeReq({ headers: { authorization } }));
+            assert.equal(nextCalled, false, authorization);
+            assert.equal(res.statusCode, 401, authorization);
+            assert.match(res.body.error.message, /Missing API key/, authorization);
+        }
+    });
+
+    it('parses hostile Authorization headers in linear time', () => {
+        const started = performance.now();
+        for (const filler of [' ', ' \t']) {
+            const authorization = `bearer ${filler.repeat(8000)} `;
+            run(auth, fakeReq({ headers: { authorization } }));
+        }
+        assert.ok(performance.now() - started < 50, 'no regex backtracking on long whitespace runs');
+    });
+
+    it('does not accept a key that only shares a prefix or differs in length', () => {
+        for (const key of [KEY.slice(0, -1), `${KEY}x`, KEY.toUpperCase()]) {
+            assert.equal(run(auth, fakeReq({ headers: { authorization: `Bearer ${key}` } })).nextCalled, false, key);
+        }
     });
 
     it('marks unauthenticated and public requests as anonymous', () => {
