@@ -4,9 +4,17 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-26
+
+First release published everywhere: Docker Hub, npm (with provenance) and GitHub Releases.
+
+### Security
+- The `Authorization` header is parsed without a regular expression, so no header can trigger slow backtracking.
+- API keys are compared byte for byte in constant time and are no longer hashed; stored responses are scoped by which configured key matched.
+
 ## [1.0.0] - 2026-09-26
 
-First public release.
+First public release (npm only).
 
 ### Added
 - An OpenAI-compatible API for OpenCode's free Zen models. It runs the real OpenCode CLI (`opencode serve`, bundled through the `opencode-ai` npm package) as a private, isolated backend, so no Zen API key is needed.
@@ -29,5 +37,6 @@ First public release.
 - Stored responses are scoped to the API key that created them.
 - Concurrency slots are weighted by `n` and always released on timeout or disconnect. A request fails fast when the upstream keeps failing.
 
-[Unreleased]: https://github.com/developingchet/zengate/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/developingchet/zengate/releases/tag/v1.0.0
+[Unreleased]: https://github.com/developingchet/zengate/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/developingchet/zengate/releases/tag/v1.0.1
+[1.0.0]: https://www.npmjs.com/package/zengate/v/1.0.0

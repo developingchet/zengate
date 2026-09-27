@@ -3,17 +3,25 @@ import { ApiError, sendError } from './errors.js';
 
 const PUBLIC_PATHS = new Set(['/health', '/ready']);
 
-/** Constant-time comparison; hashing first hides the key length. */
-function safeEqual(a, b) {
-    const ha = crypto.createHash('sha256').update(a).digest();
-    const hb = crypto.createHash('sha256').update(b).digest();
-    return crypto.timingSafeEqual(ha, hb);
+const BEARER = 'bearer';
+
+/**
+ * Constant-time comparison of the key bytes. Only the length can differ in
+ * timing, and key lengths are not secret (generated keys have a fixed format).
+ */
+function safeEqual(presented, expected) {
+    const a = Buffer.from(presented);
+    const b = Buffer.from(expected);
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+/** The key from `Authorization: Bearer <key>`, parsed without a backtracking regex. */
 function presentedKey(req) {
-    const header = req.headers.authorization || '';
-    const match = /^Bearer\s+(.+)$/i.exec(header);
-    return match ? match[1].trim() : '';
+    const header = typeof req.headers.authorization === 'string' ? req.headers.authorization.trim() : '';
+    const scheme = header.slice(0, BEARER.length);
+    const separator = header.charAt(BEARER.length);
+    if (scheme.toLowerCase() !== BEARER || !/\s/.test(separator)) return '';
+    return header.slice(BEARER.length + 1).trim();
 }
 
 /**
@@ -25,9 +33,11 @@ export function authMiddleware({ apiKeys, allowNoAuth, onFailure }) {
         req.clientId = 'anonymous';
         if (allowNoAuth || PUBLIC_PATHS.has(req.path) || req.method === 'OPTIONS') return next();
         const key = presentedKey(req);
-        if (key && apiKeys.some((candidate) => safeEqual(key, candidate))) {
-            // Opaque per-key id: scopes stored responses to the key that made them.
-            req.clientId = crypto.createHash('sha256').update(key).digest('hex').slice(0, 32);
+        const index = key ? apiKeys.findIndex((candidate) => safeEqual(key, candidate)) : -1;
+        if (index !== -1) {
+            // Names the matched key without deriving anything from it; scopes
+            // stored responses to the key that made them.
+            req.clientId = `key_${index}`;
             return next();
         }
         onFailure?.();

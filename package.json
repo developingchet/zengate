@@ -1,6 +1,6 @@
 {
   "name": "zengate",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Keyless OpenAI-compatible API (Chat Completions + Responses) for OpenCode's free Zen models, served through the real OpenCode CLI.",
   "homepage": "https://github.com/developingchet/zengate#readme",
   "repository": {
