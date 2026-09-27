@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Security
 - A weekly Trivy scan of the published Docker Hub image (amd64 and arm64) reports to the Security tab. CI and the Socket scan of `main` also run weekly.
+- OpenSSF Scorecard grades the repository's security practices weekly, with a badge in the README.
 
 ## [1.0.3] - 2026-09-26
 
