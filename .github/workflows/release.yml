@@ -217,6 +217,9 @@ jobs:
           body_path: notes.md
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
+          # Releases are immutable once published. Pre-releases stay drafts so
+          # their assets can upload; publish them by hand on GitHub.
+          draft: ${{ contains(github.ref_name, '-') }}
           files: |
             zengate-*.tgz
             zengate-sbom.cdx.json
