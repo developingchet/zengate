@@ -39,7 +39,10 @@ jobs:
         uses: SocketDev/action@ba6de6cc0565af1f42295590380973573297e31f # v1.3.2
         with:
           mode: firewall
-      - run: sfw npm ci
+      - name: Install dependencies through the firewall
+        run: |
+          sfw npm ci
+          npm ls --omit=dev --depth=0 > /dev/null
       - run: npm run lint
       - run: npm test
       - run: npm run audit
@@ -145,7 +148,10 @@ jobs:
         uses: SocketDev/action@ba6de6cc0565af1f42295590380973573297e31f # v1.3.2
         with:
           mode: firewall
-      - run: sfw npm ci
+      - name: Install dependencies through the firewall
+        run: |
+          sfw npm ci
+          npm ls --omit=dev --depth=0 > /dev/null
       - name: Publish
         # Trusted publishing only: npmjs.com trusts this workflow (package
         # Settings > Trusted Publisher), so no npm token is stored anywhere.

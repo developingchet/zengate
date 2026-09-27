@@ -30,7 +30,12 @@ jobs:
         uses: SocketDev/action@ba6de6cc0565af1f42295590380973573297e31f # v1.3.2
         with:
           mode: firewall
-      - run: sfw npm ci
+      - name: Install dependencies through the firewall
+        shell: bash
+        run: |
+          sfw npm ci
+          # Fail if the wrapper exited without installing anything.
+          npm ls --omit=dev --depth=0 > /dev/null
       - run: npm run lint
       - run: npm run test:coverage
       - run: npm run audit
