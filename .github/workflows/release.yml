@@ -139,11 +139,17 @@ jobs:
         run: npm install -g npm@latest
       - run: npm ci
       - name: Publish
-        # Uses trusted publishing (OIDC) when it is configured on npmjs.com.
-        # NPM_TOKEN is only a fallback for the very first publish.
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # Trusted publishing only: npmjs.com trusts this workflow (package
+        # Settings > Trusted Publisher), so no npm token is stored anywhere.
+        # Provenance is attached automatically. A version that is already on
+        # npm is skipped, so a release tag can be re-run safely.
         run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "::notice::$name@$version is already on npm; skipping publish"
+            exit 0
+          fi
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then tag=next; else tag=latest; fi
           npm publish --access public --provenance --tag "$tag"
 

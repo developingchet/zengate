@@ -22,5 +22,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Stay on the Node.js LTS line that package.json "engines" targets; move to
+    # a new major deliberately (with engines, CI and docs) rather than via a bot PR.
+    ignore:
+      - dependency-name: node
+        update-types: [version-update:semver-major]
     commit-message:
       prefix: chore
