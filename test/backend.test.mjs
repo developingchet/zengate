@@ -161,6 +161,7 @@ describe('isolation', () => {
         assert.equal(config.permission.bash, 'ask');
         assert.equal(config.autoupdate, false);
         assert.equal(config.share, 'disabled');
+        assert.equal(config.experimental.continue_loop_on_deny, true);
     });
 
     it('creates and removes a private scratch tree', () => {

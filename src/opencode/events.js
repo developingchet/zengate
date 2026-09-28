@@ -45,12 +45,19 @@ export function createEventHub({ getClient, logger, ownsAllSessions }) {
         }
     }
 
+    /**
+     * OpenCode answers 404 once a request is gone: rejecting one request of
+     * a session also rejects the rest, and the sweep can race the event.
+     */
+    const alreadyAnswered = (error) => error?.status === 404;
+
     async function rejectPermission(id, sessionId) {
         try {
             await getClient().replyPermission(id, 'reject', TOOL_REJECTION_MESSAGE);
             logger.debug('Rejected OpenCode tool permission', { sessionId });
         } catch (error) {
-            logger.warn('Failed to reject an OpenCode tool permission', { sessionId, error: error.message });
+            if (alreadyAnswered(error)) logger.debug('OpenCode tool permission was already answered', { sessionId });
+            else logger.warn('Failed to reject an OpenCode tool permission', { sessionId, error: error.message });
         }
     }
 
@@ -58,7 +65,8 @@ export function createEventHub({ getClient, logger, ownsAllSessions }) {
         try {
             await getClient().rejectQuestion(id);
         } catch (error) {
-            logger.warn('Failed to reject an OpenCode question', { sessionId, error: error.message });
+            if (alreadyAnswered(error)) logger.debug('OpenCode question was already answered', { sessionId });
+            else logger.warn('Failed to reject an OpenCode question', { sessionId, error: error.message });
         }
     }
 

@@ -147,7 +147,8 @@ export async function startFakeOpencode({ providers = DEFAULT_PROVIDERS, pending
         const result = await behavior(ctx);
         abortWaiters.delete(sessionId);
         if (!result) return;
-        if (session) session.messages.push(...(result.extraMessages || []), { info: result.info, parts: result.parts });
+        const user = { info: { id: nextId('msg'), role: 'user', sessionID: sessionId, ...(body?.format ? { format: body.format } : {}) }, parts: [] };
+        if (session) session.messages.push(user, ...(result.extraMessages || []), { info: result.info, parts: result.parts });
         sendJson(res, 200, { info: result.info, parts: result.parts });
     }
 
@@ -202,8 +203,15 @@ export async function startFakeOpencode({ providers = DEFAULT_PROVIDERS, pending
                 return sendJson(res, 200, true);
             }
             if (req.method === 'POST' && segments[2] === 'message') return handlePrompt(req, res, sessionId);
+            if (req.method === 'GET' && segments[2] === 'message' && segments[3]) {
+                const found = (state.sessions.get(sessionId)?.messages || []).find((m) => m?.info?.id === segments[3]);
+                return found ? sendJson(res, 200, found) : sendJson(res, 404, { error: 'not found' });
+            }
             if (req.method === 'GET' && segments[2] === 'message') {
-                return sendJson(res, 200, state.sessions.get(sessionId)?.messages || []);
+                // Like OpenCode 1.18, the listing fails to encode a stored output format.
+                const messages = state.sessions.get(sessionId)?.messages || [];
+                if (messages.some((m) => m.info?.format)) return sendJson(res, 400, { name: 'BadRequest', data: { message: 'Expected OutputFormatJsonSchema' } });
+                return sendJson(res, 200, messages);
             }
         }
         return sendJson(res, 404, { error: 'not found' });

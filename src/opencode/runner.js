@@ -82,11 +82,7 @@ export function createRunner({ getClient, hub, logger, agent }) {
                 if (signal.aborted) throw signal.reason ?? error;
                 throw mapBackendError(error);
             }
-            // Several assistant messages mean OpenCode continued after a
-            // rejected tool; without live events we cannot know, so re-read.
-            const assistantMessages = tracker.assistantCount() > 1 || !hub.isConnected()
-                ? (await client.messages(sessionId, { signal })).filter((m) => m?.info?.role === 'assistant')
-                : [last];
+            const assistantMessages = await readTurn({ client, sessionId, last, ids: tracker.assistantIds(), connected: hub.isConnected(), signal });
             const result = summarize(assistantMessages);
             tracker.flushRemainder(result);
             return result;
@@ -95,6 +91,29 @@ export function createRunner({ getClient, hub, logger, agent }) {
             outer.removeEventListener('abort', forward);
             unsubscribe();
             void cleanup(client, sessionId);
+        }
+    }
+
+    /**
+     * The turn's assistant messages. Several of them mean OpenCode continued
+     * after a rejected tool, so the earlier ones are fetched one by one: the
+     * session listing also returns the user message, which OpenCode fails to
+     * encode (HTTP 400) when the prompt carried an output format. Without live
+     * events the message ids are unknown and only the listing can find them.
+     * If the re-read fails, the final message alone is still a valid answer.
+     */
+    async function readTurn({ client, sessionId, last, ids, connected, signal }) {
+        const earlier = ids.filter((messageId) => messageId !== last?.info?.id);
+        if (connected && earlier.length === 0) return [last];
+        try {
+            if (!connected) return (await client.messages(sessionId, { signal })).filter((m) => m?.info?.role === 'assistant');
+            const fetched = [];
+            for (const messageId of earlier) fetched.push(await client.message(sessionId, messageId, { signal }));
+            return [...fetched, last];
+        } catch (error) {
+            if (signal.aborted) throw signal.reason ?? error;
+            logger.warn('Could not re-read the OpenCode turn; answering from its final message', { sessionId, error: error.message });
+            return [last];
         }
     }
 
@@ -169,7 +188,8 @@ function createStreamTracker(onDelta) {
     return {
         handle,
         flushRemainder,
-        assistantCount: () => [...roles.values()].filter((role) => role === 'assistant').length,
+        /** Assistant message ids in the order OpenCode created them. */
+        assistantIds: () => [...roles].filter(([, role]) => role === 'assistant').map(([messageId]) => messageId),
     };
 }
 

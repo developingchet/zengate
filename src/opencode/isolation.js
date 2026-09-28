@@ -17,6 +17,11 @@ const PASSTHROUGH_ENV = [
  * OpenCode configuration for the managed backend. Every tool permission is
  * "ask" (the tool stays advertised exactly as in stock OpenCode) and the
  * gateway answers every ask with "reject", so tools never run.
+ *
+ * `continue_loop_on_deny` hands each rejection back to the model instead of
+ * ending the turn. OpenCode rejects every other pending request of a session
+ * along with the one answered, and without it those plain rejections stop
+ * the turn before the model has written an answer.
  */
 export function backendConfig() {
     return {
@@ -28,6 +33,7 @@ export function backendConfig() {
             '*': 'ask', read: 'ask', edit: 'ask', bash: 'ask', glob: 'ask', grep: 'ask', list: 'ask',
             task: 'ask', webfetch: 'ask', websearch: 'ask', external_directory: 'ask', skill: 'ask', lsp: 'ask',
         },
+        experimental: { continue_loop_on_deny: true },
     };
 }
 

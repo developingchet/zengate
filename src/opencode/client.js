@@ -65,6 +65,7 @@ export function createOpencodeClient({ baseUrl, username, password, fetchImpl = 
         deleteSession: (sessionId, options) => request('DELETE', `/session/${id(sessionId)}`, options),
         abortSession: (sessionId, options) => request('POST', `/session/${id(sessionId)}/abort`, { timeoutMs: 5000, ...options }),
         messages: (sessionId, options) => request('GET', `/session/${id(sessionId)}/message`, options),
+        message: (sessionId, messageId, options) => request('GET', `/session/${id(sessionId)}/message/${id(messageId)}`, options),
         /** Blocks until the assistant turn finishes; returns { info, parts }. */
         prompt: (sessionId, body, options) => request('POST', `/session/${id(sessionId)}/message`, { body, timeoutMs: 0, ...options }),
         replyPermission: (requestId, reply, message) =>
