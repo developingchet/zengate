@@ -35,7 +35,7 @@ const assistant = (id, text, extra = {}) => ({
     parts: [{ type: 'reasoning', text: `think-${id}` }, { type: 'text', text }, { type: 'tool', tool: 'read' }],
 });
 
-function setup({ prompt, messages = async () => [], createSession, deleteSession, hubOptions } = {}) {
+function setup({ prompt, messages = async () => [], message, createSession, deleteSession, hubOptions, logger = silentLogger } = {}) {
     const hub = fakeHub(hubOptions);
     const log = { aborted: [], deleted: [], bodies: [] };
     const client = {
@@ -45,10 +45,11 @@ function setup({ prompt, messages = async () => [], createSession, deleteSession
             return prompt({ sessionId, body, signal, emit: (event) => hub.emit(sessionId, event) });
         },
         messages,
+        message: message || (async () => { throw new Error('unexpected single-message read'); }),
         abortSession: async (id) => { log.aborted.push(id); },
         deleteSession: deleteSession || (async (id) => { log.deleted.push(id); }),
     };
-    const runner = createRunner({ getClient: () => client, hub, logger: silentLogger, agent: 'plan' });
+    const runner = createRunner({ getClient: () => client, hub, logger, agent: 'plan' });
     return { runner, hub, log };
 }
 
@@ -100,7 +101,8 @@ describe('runner', () => {
         assert.deepEqual(Object.keys(log.bodies[0]), ['model', 'agent', 'parts']);
     });
 
-    it('re-reads messages when the turn spans several assistant messages', async () => {
+    it('re-reads the earlier assistant messages one by one when the turn spans several', async () => {
+        const reads = [];
         const { runner } = setup({
             async prompt({ emit }) {
                 emit({ type: 'message.updated', properties: { info: { id: 'a1', role: 'assistant' } } });
@@ -109,11 +111,16 @@ describe('runner', () => {
                 emit({ type: 'message.updated', properties: { info: { id: 'a2', role: 'assistant' } } });
                 emit({ type: 'message.part.updated', properties: { part: { id: 'p2', type: 'text' } } });
                 emit({ type: 'message.part.delta', properties: { messageID: 'a2', partID: 'p2', field: 'text', delta: 'Second' } });
-                return assistant('a2', 'Second');
+                return assistant('a2', 'Second', { finish: 'length' });
             },
-            messages: async () => [{ info: { role: 'user' }, parts: [] }, assistant('a1', 'First'), assistant('a2', 'Second', { finish: 'length' }), null],
+            messages: async () => { throw new BackendError('listing must not be used', { status: 400 }); },
+            message: async (sessionId, messageId) => {
+                reads.push([sessionId, messageId]);
+                return assistant(messageId, 'First');
+            },
         });
         const { result, deltas } = await runCollect(runner);
+        assert.deepEqual(reads, [['ses_1', 'a1']]);
         assert.deepEqual(deltas.filter(([kind]) => kind === 'text'), [['text', 'First'], ['text', '\n\nSecond']]);
         assert.equal(result.text, 'First\n\nSecond');
         assert.equal(result.reasoning, 'think-a1\n\nthink-a2');
@@ -126,6 +133,49 @@ describe('runner', () => {
         const { result, deltas } = await runCollect(runner);
         assert.equal(result.text, 'fresh');
         assert.deepEqual(deltas.sort(), [['reasoning', 'think-m'], ['text', 'fresh']]);
+    });
+
+    it('answers from the final message when an earlier one cannot be read', async () => {
+        const warnings = [];
+        const logger = createLogger({ level: 'warn', sink: { out: () => {}, err: (line) => warnings.push(line) } });
+        const { runner } = setup({
+            logger,
+            async prompt({ emit }) {
+                emit({ type: 'message.updated', properties: { info: { id: 'a1', role: 'assistant' } } });
+                emit({ type: 'message.updated', properties: { info: { id: 'a2', role: 'assistant' } } });
+                return assistant('a2', 'Final');
+            },
+            message: async () => { throw new BackendError('OpenCode GET failed with HTTP 400', { status: 400 }); },
+        });
+        const { result } = await runCollect(runner);
+        assert.equal(result.text, 'Final');
+        assert.deepEqual(result.usage, { input: 3, output: 2, reasoning: 1, cacheRead: 1 });
+        assert.ok(warnings.some((line) => /Could not re-read the OpenCode turn/.test(line)));
+    });
+
+    it('answers from the final message when the listing fails with the event stream down', async () => {
+        const { runner } = setup({
+            hubOptions: { connected: false },
+            prompt: async () => assistant('m', 'final'),
+            messages: async () => { throw new BackendError('OpenCode GET failed with HTTP 400', { status: 400 }); },
+        });
+        assert.equal((await runCollect(runner)).result.text, 'final');
+    });
+
+    it('does not fall back when the caller aborts during the re-read', async () => {
+        const controller = new AbortController();
+        const { runner } = setup({
+            async prompt({ emit }) {
+                emit({ type: 'message.updated', properties: { info: { id: 'a1', role: 'assistant' } } });
+                emit({ type: 'message.updated', properties: { info: { id: 'a2', role: 'assistant' } } });
+                return assistant('a2', 'Final');
+            },
+            message: async (sessionId, messageId, { signal }) => {
+                controller.abort(new Error('client went away'));
+                return abortable(signal);
+            },
+        });
+        await assert.rejects(runCollect(runner, REQUEST, controller.signal), /client went away/);
     });
 
     it('maps finish reasons and model errors', async () => {
@@ -258,7 +308,7 @@ function controllableStream(signal) {
     };
 }
 
-function hubSetup({ ownsAllSessions = false, pendingPermissions = async () => [], pendingQuestions = async () => [], replyPermission, openEvents } = {}) {
+function hubSetup({ ownsAllSessions = false, pendingPermissions = async () => [], pendingQuestions = async () => [], replyPermission, rejectQuestion, openEvents } = {}) {
     const streams = [];
     const log = { replies: [], questions: [], warnings: [] };
     const client = {
@@ -269,7 +319,7 @@ function hubSetup({ ownsAllSessions = false, pendingPermissions = async () => []
             return stream;
         },
         replyPermission: replyPermission || (async (id, reply, message) => { log.replies.push({ id, reply, message }); }),
-        rejectQuestion: async (id) => { log.questions.push(id); },
+        rejectQuestion: rejectQuestion || (async (id) => { log.questions.push(id); }),
         pendingPermissions,
         pendingQuestions,
     };
@@ -369,12 +419,30 @@ describe('event hub', () => {
     });
 
     it('logs when a rejection fails', async (t) => {
-        const { hub, streams, log } = hubSetup({ ownsAllSessions: true, replyPermission: async () => { throw new Error('backend down'); } });
+        const { hub, streams, log } = hubSetup({
+            ownsAllSessions: true,
+            replyPermission: async () => { throw new Error('backend down'); },
+            rejectQuestion: async () => { throw new Error('backend down'); },
+        });
         t.after(() => hub.stop());
         hub.start();
         await hub.waitConnected(2000);
         streams[0].send({ type: 'permission.asked', properties: { id: 'p', sessionID: 's' } });
         await waitFor(() => log.warnings.some((line) => /Failed to reject an OpenCode tool permission/.test(line)));
+        streams[0].send({ type: 'question.asked', properties: { id: 'q', sessionID: 's' } });
+        await waitFor(() => log.warnings.some((line) => /Failed to reject an OpenCode question/.test(line)));
+    });
+
+    it('treats a request that is already gone as answered', async (t) => {
+        const gone = () => { throw new BackendError('OpenCode POST failed with HTTP 404', { status: 404 }); };
+        const { hub, streams, log } = hubSetup({ ownsAllSessions: true, replyPermission: async () => gone(), rejectQuestion: async () => gone() });
+        t.after(() => hub.stop());
+        hub.start();
+        await hub.waitConnected(2000);
+        streams[0].send({ type: 'permission.asked', properties: { id: 'p', sessionID: 's' } });
+        streams[0].send({ type: 'question.asked', properties: { id: 'q', sessionID: 's' } });
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        assert.deepEqual(log.warnings, []);
     });
 
     it('reconnects after the stream ends', async (t) => {

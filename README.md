@@ -229,7 +229,7 @@ Set values as environment variables or in the config file (same names; see [`con
 | `ALLOW_INSECURE_BACKEND_HTTP` | `false` | Allow a non-loopback `http://` server URL. |
 | `CONFIG_FILE` | see [First start](#first-start) | Where the config file lives (environment variable only). |
 
-**Attach mode.** `OPENCODE_SERVER_URL` uses a server you run yourself. The gateway can only reject tool calls that server *asks* permission for; that happens in its own sessions and their subagents. It trusts the server's own permission config, plugins and MCP servers. If that config allows tools without asking, they will run. Use it only with a server configured like the managed one (every permission set to `"ask"`). The managed default is safer. Remote servers must use `https://` unless you set `ALLOW_INSECURE_BACKEND_HTTP`.
+**Attach mode.** `OPENCODE_SERVER_URL` uses a server you run yourself. The gateway can only reject tool calls that server *asks* permission for; that happens in its own sessions and their subagents. It trusts the server's own permission config, plugins and MCP servers. If that config allows tools without asking, they will run. Use it only with a server configured like the managed one: every permission set to `"ask"`, and `experimental.continue_loop_on_deny` set to `true` so a rejected tool does not end the turn with an empty reply. The managed default is safer. Remote servers must use `https://` unless you set `ALLOW_INSECURE_BACKEND_HTTP`.
 
 ## Deployment
 

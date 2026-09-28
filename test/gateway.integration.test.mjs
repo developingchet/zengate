@@ -251,6 +251,19 @@ describe('gateway over HTTP (fake OpenCode backend)', () => {
             assert.equal(body.usage.prompt_tokens, 24);
         });
 
+        it('joins several assistant messages of a structured-output turn', async () => {
+            stack.fake.setBehavior(async (ctx) => {
+                const first = await streamTurn(ctx, { text: 'Checking', settleMs: 0 });
+                const second = await streamTurn(ctx, { text: 'Done', structured: { answer: 42 } });
+                return { ...second, extraMessages: [first] };
+            });
+            const schema = { type: 'object', properties: { answer: { type: 'number' } } };
+            const { status, body } = await chat({ response_format: { type: 'json_schema', json_schema: { name: 'a', schema } } });
+            assert.equal(status, 200);
+            assert.equal(body.choices[0].message.content, '{"answer":42}');
+            assert.equal(body.usage.prompt_tokens, 24);
+        });
+
         it('maps upstream failures to OpenAI errors', async () => {
             stack.fake.setBehavior((ctx) => streamTurn(ctx, { error: { name: 'APIError', data: { statusCode: 429, message: 'slow down', responseHeaders: { 'retry-after': '7' } } } }));
             const { status, body, headers } = await chat({});
