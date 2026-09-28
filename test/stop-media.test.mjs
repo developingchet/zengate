@@ -23,10 +23,24 @@ describe('stop filter', () => {
 
     it('holds back only a possible stop prefix and releases it on flush', () => {
         const filter = createStopFilter(['###']);
-        assert.equal(filter.push('abc#'), 'ab');
-        assert.equal(filter.push('d'), 'c');
-        assert.equal(filter.flush(), '#d');
+        assert.equal(filter.push('abc#'), 'abc');
+        assert.equal(filter.push('#'), '');
+        assert.equal(filter.flush(), '##');
         assert.equal(filter.stopped, false);
+    });
+
+    it('waits for a longer sequence that starts before a shorter match', () => {
+        const filter = createStopFilter(['abb', 'b']);
+        assert.equal(filter.push('ab'), '');
+        assert.equal(filter.stopped, false);
+        assert.equal(filter.push('b'), '');
+        assert.equal(filter.stopped, true);
+    });
+
+    it('applies the shorter match on flush when the longer sequence never completes', () => {
+        const filter = createStopFilter(['abb', 'b']);
+        assert.equal(filter.push('ab'), '');
+        assert.equal(filter.flush(), 'a');
     });
 
     it('stops at the earliest of several sequences', () => {
