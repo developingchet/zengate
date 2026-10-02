@@ -42,8 +42,8 @@ function requestLogger(logger) {
         if (!PROBE_PATHS.has(req.path)) {
             const started = performance.now();
             res.once('close', () => {
-                // Control characters are dropped so a path cannot forge or break up log lines.
-                const path = req.originalUrl.split('?')[0].replace(/[\x00-\x1f\x7f]/g, '');
+                // Control and line-separator characters are dropped so a path cannot forge or break up log lines.
+                const path = req.originalUrl.split('?')[0].replace(/[\n\r\u2028\u2029\x00-\x1f\x7f-\x9f]/g, '');
                 req.log.info(`${req.method} ${path} ${res.statusCode}`, {
                     ms: Math.round(performance.now() - started),
                     client: req.clientId,
