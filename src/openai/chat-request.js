@@ -1,5 +1,6 @@
 import { invalidRequest, unsupported } from '../server/errors.js';
 import { audioFromBase64, fileAttachment, imageFromUrl, videoFromUrl } from './media.js';
+import { parseMaxTokens } from './length-limit.js';
 import { fileBlock } from './markup.js';
 import { newCallId } from './tool-calls.js';
 
@@ -9,14 +10,14 @@ import { newCallId } from './tool-calls.js';
  * They are reported back in the `x-gateway-ignored-params` header.
  */
 const IGNORED = new Set([
-    'temperature', 'top_p', 'max_tokens', 'max_completion_tokens', 'presence_penalty', 'frequency_penalty',
+    'temperature', 'top_p', 'presence_penalty', 'frequency_penalty',
     'seed', 'logit_bias', 'user', 'metadata', 'store', 'service_tier', 'prompt_cache_key', 'prompt_cache_retention',
     'safety_identifier', 'verbosity', 'prediction', 'web_search_options', 'top_k', 'min_p', 'repetition_penalty',
 ]);
 const HANDLED = new Set([
     'model', 'messages', 'stream', 'stream_options', 'n', 'stop', 'response_format', 'reasoning_effort',
     'tools', 'tool_choice', 'parallel_tool_calls', 'functions', 'function_call', 'logprobs', 'top_logprobs',
-    'modalities', 'audio',
+    'modalities', 'audio', 'max_tokens', 'max_completion_tokens',
 ]);
 const ROLES = new Set(['system', 'developer', 'user', 'assistant', 'tool', 'function']);
 const MAX_MESSAGES = 2000;
@@ -177,6 +178,7 @@ export function parseChatRequest(body, media) {
         reasoningEffort: typeof body.reasoning_effort === 'string' ? body.reasoning_effort : null,
         stop: parseStop(body.stop),
         n,
+        maxTokens: parseMaxTokens(body, ['max_completion_tokens', 'max_tokens']),
         stream: body.stream === true,
         includeUsage: body.stream_options?.include_usage === true,
         ignored,

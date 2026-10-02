@@ -15,7 +15,7 @@ describe('app', () => {
         const config = loadConfig({}, { ALLOW_NO_AUTH: 'true', RATE_LIMIT_PER_MINUTE: '0' });
         const logger = createLogger({ level: 'info', json: true, sink: { out: (line) => lines.push(JSON.parse(line)), err: () => {} } });
         const backend = { mode: 'managed', isReady: () => true, version: () => '1.2.3' };
-        const hub = { isConnected: () => true };
+        const hub = { isConnected: () => true, toolRejections: () => 4 };
         const store = createResponsesStore({ maxEntries: 1 });
         const created = createApp({ config, logger, backend, hub, catalog: {}, runner: {}, store });
         drain = created.startDraining;
@@ -36,6 +36,21 @@ describe('app', () => {
         assert.equal(line.requestId, 'trace-1');
         assert.equal(line.client, 'anonymous');
         assert.equal(typeof line.ms, 'number');
+    });
+
+    it('serves Prometheus metrics to scrapers and JSON to everyone else', async () => {
+        const scrape = await fetch(`${base}/metrics`, { headers: { accept: 'application/openmetrics-text;version=1.0.0,text/plain;version=0.0.4;q=0.5,*/*;q=0.1' } });
+        assert.match(scrape.headers.get('content-type'), /^text\/plain/);
+        const text = await scrape.text();
+        assert.match(text, /^# HELP zengate_up_seconds/m);
+        assert.match(text, /^zengate_http_responses_total\{status="200"\} \d+$/m);
+        assert.match(text, /^zengate_request_duration_seconds_bucket\{route="\/metrics",le="\+Inf"\} \d+$/m);
+        assert.match(text, /^zengate_backend_ready\{opencode="1.2.3"\} 1$/m);
+        assert.match(text, /^zengate_tool_rejections_total 4$/m);
+        assert.match(await (await fetch(`${base}/metrics?format=prometheus`)).text(), /^zengate_slots\{state="active"\} 0$/m);
+        const json = await (await fetch(`${base}/metrics`)).json();
+        assert.equal(json.tool_rejections, 4);
+        assert.equal(typeof json.latency['/metrics'].mean_ms, 'number');
     });
 
     it('reports "stopping" on /ready once draining starts', async () => {

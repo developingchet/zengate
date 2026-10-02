@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { ApiError, invalidRequest, sendError, toApiError, unsupported } from '../src/server/errors.js';
 import { admissionMiddleware, createLimiter } from '../src/server/limiter.js';
-import { createMetrics } from '../src/server/metrics.js';
+import { createMetrics, routeLabel } from '../src/server/metrics.js';
 import { authMiddleware, rateLimitMiddleware, requestId, securityHeaders } from '../src/server/middleware.js';
 import { slotMiddleware } from '../src/server/slot.js';
 import { fakeReq, fakeRes, run } from './helpers/fake-http.mjs';
@@ -300,6 +300,41 @@ describe('slotMiddleware', () => {
         });
         assert.equal(aborted, false);
     });
+
+    it('tells the work how many slots it actually holds', async () => {
+        const { req } = setup({ maxConcurrent: 2 });
+        assert.equal(await req.withSlot(async (signal, granted) => granted, 4), 2);
+        assert.equal(await req.withSlot(async (signal, granted) => granted), 1);
+    });
+
+    it('stops work that is still running when the slot is released', async () => {
+        const { limiter, req } = setup({ maxConcurrent: 2 });
+        let sibling;
+        await assert.rejects(req.withSlot(async (signal) => {
+            sibling = new Promise((resolve) => signal.addEventListener('abort', () => resolve(signal.reason)));
+            throw new Error('first choice failed');
+        }, 2), /first choice failed/);
+        assert.equal(limiter.stats().active, 0);
+        assert.equal((await sibling).code, 'cancelled');
+    });
+});
+
+describe('routeLabel', () => {
+    it('keeps metric labels to a fixed set of routes', () => {
+        assert.equal(routeLabel('/v1/chat/completions?x=1'), '/chat/completions');
+        assert.equal(routeLabel('/responses/resp_123'), '/responses/{id}');
+        assert.equal(routeLabel('/v1/models/opencode/big-pickle'), '/models/{id}');
+        assert.equal(routeLabel('/v1/anything/else'), 'other');
+        assert.equal(routeLabel('/v1'), 'other');
+        assert.equal(routeLabel('/v1/models//'), '/models');
+    });
+
+    it('labels very long paths without scanning them', () => {
+        const started = performance.now();
+        assert.equal(routeLabel(`${'/'.repeat(16000)}x`), 'other');
+        assert.equal(routeLabel(`/v1/chat/completions${'/'.repeat(16000)}`), 'other');
+        assert.ok(performance.now() - started < 50);
+    });
 });
 
 describe('metrics', () => {
@@ -310,13 +345,18 @@ describe('metrics', () => {
         metrics.middleware({}, res, () => { nextCalled = true; });
         assert.ok(nextCalled);
         res.statusCode = 201;
-        res.emit('finish');
+        res.writableFinished = true;
+        res.emit('close');
+        const abandoned = fakeRes();
+        metrics.middleware({}, abandoned, () => {});
+        abandoned.statusCode = 200;
+        abandoned.emit('close');
         metrics.authFailure();
         metrics.rateLimited();
         metrics.rateLimited();
         const snapshot = metrics.snapshot({ extra: true });
-        assert.equal(snapshot.requests, 1);
-        assert.deepEqual(snapshot.responses_by_status, { 201: 1 });
+        assert.equal(snapshot.requests, 2);
+        assert.deepEqual(snapshot.responses_by_status, { 201: 1, 499: 1 }, 'a client that left early counts as 499');
         assert.equal(snapshot.auth_failures, 1);
         assert.equal(snapshot.rate_limited, 2);
         assert.equal(snapshot.extra, true);

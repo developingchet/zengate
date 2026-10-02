@@ -1,5 +1,6 @@
 import express from 'express';
 import { chatCompletionsHandler } from '../openai/chat.js';
+import { completionsHandler } from '../openai/completions.js';
 import { modelsHandlers } from '../openai/models.js';
 import { responsesHandlers } from '../openai/responses.js';
 import { corsMiddleware } from './cors.js';
@@ -23,6 +24,10 @@ function openAiRoutes({ runner, catalog, store, limits }) {
     router.get('/models', route(models.list));
     router.get('/models/*id', route(models.retrieve));
     router.post('/chat/completions', route(chatCompletionsHandler({ runner, catalog, limits })));
+    router.post('/completions', route(completionsHandler({ runner, catalog })));
+    router.post('/embeddings', () => {
+        throw new ApiError(404, 'Embeddings are not available: OpenCode Zen serves chat models only.', { code: 'unsupported_endpoint' });
+    });
     router.post('/responses', route(responses.create));
     router.get('/responses/:id', route(responses.retrieve));
     router.delete('/responses/:id', route(responses.remove));
@@ -95,13 +100,29 @@ export function createApp({ config, logger, backend, hub, catalog, runner, store
 
     app.use(rateLimit);
     app.use(authMiddleware({ apiKeys: config.API_KEYS, allowNoAuth: config.ALLOW_NO_AUTH, onFailure: metrics.authFailure }));
-    app.get('/metrics', (req, res) => res.json(metrics.snapshot({
-        slots: { ...limiter.stats(), admitted: admission.count() },
-        stored_responses: store.size(),
-        backend_ready: backend.isReady(),
-        events_connected: hub.isConnected(),
-        opencode: backend.version(),
-    })));
+    app.get('/metrics', (req, res) => {
+        const slots = { ...limiter.stats(), admitted: admission.count() };
+        const toolRejections = hub.toolRejections?.() ?? 0;
+        // Prometheus asks for OpenMetrics or text/plain with a version parameter, which
+        // req.accepts() does not match; browsers and curl get JSON.
+        const accept = String(req.headers.accept || '');
+        const scraper = /openmetrics-text|text\/plain/.test(accept) && !accept.includes('application/json');
+        if (req.query.format === 'prometheus' || (req.query.format === undefined && scraper)) {
+            res.type('text/plain; version=0.0.4').send(metrics.prometheus({
+                slots, storedResponses: store.size(), backendReady: backend.isReady(), eventsConnected: hub.isConnected(),
+                toolRejections, opencode: backend.version(),
+            }));
+            return;
+        }
+        res.json(metrics.snapshot({
+            slots,
+            stored_responses: store.size(),
+            backend_ready: backend.isReady(),
+            events_connected: hub.isConnected(),
+            tool_rejections: toolRejections,
+            opencode: backend.version(),
+        }));
+    });
     app.use(admission);
     app.use(express.json({ limit: config.MAX_BODY_MB * MB }));
     app.use(slotMiddleware({ limiter, timeoutMs: config.REQUEST_TIMEOUT_MS }));

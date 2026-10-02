@@ -8,6 +8,22 @@ const OWNER_FILE = 'owner.pid';
 const BACKEND_FILE = 'backend.pid';
 /** Tells this gateway process apart from an earlier one that had the same pid. */
 const INSTANCE_ID = crypto.randomBytes(8).toString('hex');
+/**
+ * A tree made in another pid namespace (another container sharing this
+ * /tmp) cannot be judged by its pid, only by how recently its owner touched
+ * it. Owners touch their tree every HEARTBEAT_MS.
+ */
+export const HEARTBEAT_MS = 30000;
+const FOREIGN_STALE_MS = 4 * HEARTBEAT_MS;
+
+function pidNamespace() {
+    try {
+        return fs.readlinkSync('/proc/self/ns/pid');
+    } catch {
+        return '';
+    }
+}
+const PID_NAMESPACE = pidNamespace();
 
 /** Environment variables the backend legitimately needs from the host. */
 const PASSTHROUGH_ENV = [
@@ -54,8 +70,18 @@ export function createIsolatedRoot() {
         dirs[name] = path.join(root, name);
         fs.mkdirSync(dirs[name], { recursive: true, mode: 0o700 });
     }
-    fs.writeFileSync(path.join(root, OWNER_FILE), `${process.pid}\n${INSTANCE_ID}\n`, { mode: 0o600 });
+    fs.writeFileSync(path.join(root, OWNER_FILE), `${process.pid}\n${INSTANCE_ID}\n${PID_NAMESPACE}\n`, { mode: 0o600 });
     return { root, ...dirs };
+}
+
+/** Mark a tree as still in use (see HEARTBEAT_MS). */
+export function touchIsolatedRoot(root) {
+    try {
+        const now = new Date();
+        fs.utimesSync(path.join(root, OWNER_FILE), now, now);
+    } catch {
+        // The tree is gone or being removed.
+    }
 }
 
 /** Remember the backend's pid so a later start can stop it if this gateway dies first. */
@@ -98,8 +124,9 @@ function ownedByUs(root) {
 
 function readOwner(root) {
     try {
-        const [pid, instance = ''] = fs.readFileSync(path.join(root, OWNER_FILE), 'utf8').split('\n');
-        return { pid: Number(pid), instance: instance.trim() };
+        const file = path.join(root, OWNER_FILE);
+        const [pid, instance = '', namespace = ''] = fs.readFileSync(file, 'utf8').split('\n');
+        return { pid: Number(pid), instance: instance.trim(), namespace: namespace.trim(), touchedAt: fs.statSync(file).mtimeMs };
     } catch {
         return null;
     }
@@ -108,10 +135,12 @@ function readOwner(root) {
 /**
  * A tree is stale when its gateway is gone. A container restart reuses the
  * same pid (often 1), so a tree with our pid but another instance id is
- * stale too.
+ * stale too. Trees from another pid namespace are stale once their owner
+ * stops touching them.
  */
 function isStale(owner) {
     if (!owner || !(owner.pid > 0)) return false;
+    if (owner.namespace && owner.namespace !== PID_NAMESPACE) return Date.now() - owner.touchedAt > FOREIGN_STALE_MS;
     if (owner.pid === process.pid) return owner.instance !== INSTANCE_ID;
     return !isAlive(owner.pid);
 }

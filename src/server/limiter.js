@@ -34,7 +34,7 @@ export function createLimiter({ maxConcurrent, maxQueue, queueTimeoutMs = 0 }) {
             pump();
         };
         signal?.addEventListener('abort', release, { once: true });
-        return release;
+        return Object.assign(release, { weight });
     };
 
     const abortedError = () => new ApiError(499, 'Request cancelled.', { code: 'cancelled' });

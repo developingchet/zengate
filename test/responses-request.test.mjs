@@ -72,7 +72,8 @@ describe('parseResponsesRequest', () => {
         assert.equal(request.echo.max_output_tokens, 50);
         assert.equal(request.echo.store, false);
         assert.equal(request.echo.truncation, 'auto');
-        assert.deepEqual(request.ignored.sort(), ['max_output_tokens', 'temperature', 'top_p', 'truncation', 'user']);
+        assert.deepEqual(request.ignored.sort(), ['temperature', 'top_p', 'truncation', 'user']);
+        assert.equal(request.maxTokens, 50);
     });
 
     it('parses function and custom tools, ignoring hosted ones', () => {

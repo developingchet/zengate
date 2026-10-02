@@ -56,7 +56,8 @@ describe('parseChatRequest', () => {
 
     it('reports ignored and unknown parameters', () => {
         const request = parse({ temperature: 0.2, max_tokens: 10, foo: 1, stream: true, stream_options: { include_usage: true } });
-        assert.deepEqual(request.ignored, ['temperature', 'max_tokens', 'foo']);
+        assert.deepEqual(request.ignored, ['temperature', 'foo']);
+        assert.equal(request.maxTokens, 10);
         assert.equal(request.stream, true);
         assert.equal(request.includeUsage, true);
     });

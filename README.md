@@ -36,7 +36,8 @@ OpenCode's free Zen models only work from inside OpenCode. So this gateway does 
 Trade-offs to know about:
 
 - **Prompt overhead.** Each request carries OpenCode's system prompt and tool list (roughly 6–9k input tokens, largely cache hits), and adds about 1–3 s of latency.
-- **Sampling parameters are ignored.** Settings like `temperature` and `max_tokens` cannot be forwarded through OpenCode. The gateway accepts them and lists them in an `x-gateway-ignored-params` response header.
+- **Sampling parameters are ignored.** Settings like `temperature` and `top_p` cannot be forwarded through OpenCode. The gateway accepts them and lists them in an `x-gateway-ignored-params` response header.
+- **`max_tokens` is approximate.** OpenCode has no output limit either, so the gateway counts about four characters as a token, cuts the answer there, stops the model and reports `finish_reason: "length"`. Reasoning text does not count.
 - **Upstream terms apply.** Availability, rate limits and the model list are set by OpenCode Zen and can change at any time. Free models may have their own data policies; see the [Zen docs](https://opencode.ai/docs/zen/).
 
 > **Fair use.** zengate talks to Zen only through the official OpenCode CLI and never bypasses its limits or free-tier checks. You are responsible for following OpenCode's terms and fair-use expectations. Run it for yourself or your team, not as a public or resold service.
@@ -82,6 +83,9 @@ services:
     stop_grace_period: 20s
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    # OpenCode writes only to /tmp and the gateway only to /data.
+    read_only: true
+    tmpfs: [/tmp]
 volumes:
   zengate:
 ```
@@ -189,7 +193,9 @@ curl http://127.0.0.1:8083/v1/chat/completions \
 | `GET` / `DELETE /v1/responses/{id}` | Stored in memory for 1 hour, within `RESPONSES_STORE_MAX` entries and `RESPONSES_STORE_MB` |
 | `GET /v1/models`, `GET /v1/models/{id}` | Live list from OpenCode |
 | `GET /health`, `GET /ready` | Public liveness and readiness probes (`/ready` answers `503` while starting or shutting down) |
-| `GET /metrics` | Request counters, slot usage and the OpenCode version, as JSON (needs the key) |
+| `POST /v1/completions` | Legacy text completions: `prompt` as a string or list of strings, `n`, `stop`, `max_tokens`, `echo`, streaming. The model is asked to continue the text, so it behaves like a chat model, not a base model. Without `max_tokens` the length is not limited (OpenAI defaults to 16) |
+| `POST /v1/embeddings` | `404 unsupported_endpoint`: Zen serves chat models only |
+| `GET /metrics` | Request counters, latency and time-to-first-token, slot usage and the OpenCode version (needs the key). JSON by default; Prometheus text format for `?format=prometheus` or an `Accept: text/plain` scrape |
 
 Routes also work without the `/v1` prefix. Errors use the standard OpenAI envelope, `{"error": {"message", "type", "param", "code"}}`, with matching HTTP status codes (400, 401, 404, 413, 429 with `Retry-After`, 502, 503, 504).
 
@@ -209,7 +215,7 @@ The gateway downloads `https` attachment URLs itself (at most 16 in one request,
 
 **Function calling** is emulated. OpenCode sessions cannot register your functions natively, so their schemas go into the prompt and the model's calls come back as standard `tool_calls` or `function_call` items. It works reliably with `big-pickle`. If a model tries to call a function the wrong way, or ignores `tool_choice: "required"`, the gateway retries once with a correction.
 
-**Not supported** (clear 400 error): `logprobs`, audio output, `file_id` references (there is no Files API), `background` responses, the Conversations API and stored prompts. Hosted tools such as `web_search` in Responses are ignored and listed in `x-gateway-ignored-params`.
+**Not supported** (clear 400 error): `logprobs`, `suffix`, audio output, `file_id` references (there is no Files API), `background` responses, the Conversations API and stored prompts. Hosted tools such as `web_search` in Responses are ignored and listed in `x-gateway-ignored-params`.
 
 ## Configuration
 
@@ -241,9 +247,9 @@ Set values as environment variables or in the config file (same names; see [`con
 
 ## Deployment
 
-**Docker.** The key persists in the `/data` volume. You can pass `-e API_KEY=...` instead. Publish the port on `127.0.0.1`, or put a TLS reverse proxy in front before exposing it to a network. `docker stop` waits only 10 seconds before killing the container, so pass `--stop-timeout 20` (or `stop_grace_period` in Compose) to let in-flight requests finish.
+**Docker.** The key persists in the `/data` volume. You can pass `-e API_KEY=...` instead. Publish the port on `127.0.0.1`, or put a TLS reverse proxy in front before exposing it to a network. `docker stop` waits only 10 seconds before killing the container, so pass `--stop-timeout 20` (or `stop_grace_period` in Compose) to let in-flight requests finish. The container also runs with a read-only root (`--read-only --tmpfs /tmp`), `--cap-drop ALL` and `--security-opt no-new-privileges:true`. On shutdown, `/ready` answers `503` for up to 2 seconds before the listener closes, so a load balancer polling it stops sending traffic first.
 
-**systemd.** See [`deploy/zengate.service`](deploy/zengate.service). It runs as an unprivileged user with a hardened sandbox, and the key goes in `/var/lib/zengate/config.json`.
+**systemd.** See [`deploy/zengate.service`](deploy/zengate.service). It runs as an unprivileged user with a hardened sandbox and a system-call filter (`@system-service`), and the key goes in `/var/lib/zengate/config.json`.
 
 **Behind a reverse proxy.** Set `TRUST_PROXY=1` (or however many hops you have) so rate limits apply per real client. Disable response buffering for streaming. The gateway already sends `X-Accel-Buffering: no` for nginx.
 

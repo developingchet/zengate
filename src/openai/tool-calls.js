@@ -166,6 +166,8 @@ export function createToolCallParser(tools) {
     let capturing = false;
 
     return {
+        /** True while a call block is open and its text is held back. */
+        get capturing() { return capturing; },
         push(text) {
             pending += text;
             if (capturing) return '';

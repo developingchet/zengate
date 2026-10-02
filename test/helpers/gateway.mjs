@@ -12,7 +12,7 @@ export const OTHER_KEY = 'other-key-0123456789abcdef';
  * `overrides` are applied on top of the validated config, which allows
  * test-only values below the normal minimums (PORT 0, short timeouts).
  */
-export async function startStack({ env = {}, overrides = {}, fake: fakeOptions } = {}) {
+export async function startStack({ env = {}, overrides = {}, fake: fakeOptions, shutdownNoticeMs = 0 } = {}) {
     const fake = await startFakeOpencode(fakeOptions);
     const config = {
         ...loadConfig({}, { API_KEYS: `${KEY},${OTHER_KEY}`, RATE_LIMIT_PER_MINUTE: '0', ...env }),
@@ -20,7 +20,7 @@ export async function startStack({ env = {}, overrides = {}, fake: fakeOptions }
         ...overrides,
     };
     const backend = createAttachedBackend({ url: fake.url, username: 'opencode', password: '', logger: silentLogger });
-    const gateway = await startGateway(config, { logger: silentLogger, backend });
+    const gateway = await startGateway(config, { logger: silentLogger, backend, shutdownNoticeMs });
     const base = `http://127.0.0.1:${gateway.address.port}`;
 
     const request = (path, { key = KEY, body, headers = {}, ...init } = {}) => fetch(`${base}${path}`, {

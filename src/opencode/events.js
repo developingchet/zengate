@@ -34,6 +34,7 @@ export function createEventHub({ getClient, logger, ownsAllSessions }) {
     let controller = null;
     let connectedWaiters = [];
     let loop = null;
+    let toolRejections = 0;
 
     const isOurs = (sessionId) => ownsAllSessions || owned.has(sessionId);
 
@@ -54,6 +55,7 @@ export function createEventHub({ getClient, logger, ownsAllSessions }) {
     async function rejectPermission(id, sessionId) {
         try {
             await getClient().replyPermission(id, 'reject', TOOL_REJECTION_MESSAGE);
+            toolRejections += 1;
             logger.debug('Rejected OpenCode tool permission', { sessionId });
         } catch (error) {
             if (alreadyAnswered(error)) logger.debug('OpenCode tool permission was already answered', { sessionId });
@@ -156,6 +158,8 @@ export function createEventHub({ getClient, logger, ownsAllSessions }) {
             listeners.delete(sessionId);
         },
         isConnected: () => connected,
+        /** OpenCode tool permissions rejected so far. */
+        toolRejections: () => toolRejections,
         waitConnected(timeoutMs) {
             if (connected) return Promise.resolve(true);
             return new Promise((resolve) => {

@@ -80,6 +80,6 @@ describe('assertPublicUrls', () => {
         await assertPublicUrls([part('https://public.example/a.png')]);
         await rejected('https://mixed.example/a.png');
         await rejected('https://empty.example/a.png');
-        await rejected('https://name.invalid/a.png', /Could not resolve attachment host 'name.invalid'/);
+        await rejected('https://name.invalid/a.png', /Attachment host 'name.invalid' is not a public address/);
     });
 });

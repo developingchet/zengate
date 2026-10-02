@@ -70,7 +70,7 @@ describe('generate', () => {
         assert.equal(result.content, 'abc ');
         assert.equal(texts.join(''), 'abc ');
         assert.equal(result.finish, 'stop');
-        assert.deepEqual(result.usage, ZERO, 'an aborted run reports no usage');
+        assert.deepEqual(result.usage, { ...ZERO, output: 1 }, 'a cut-off run estimates its output');
         assert.equal(runner.calls[0].signal.aborted, true);
     });
 

@@ -2,15 +2,20 @@ import { describe, it, before, after, beforeEach, afterEach, mock } from 'node:t
 import assert from 'node:assert/strict';
 import dns from 'node:dns/promises';
 import http from 'node:http';
+import https from 'node:https';
 import { inlineRemoteAttachments } from '../src/openai/remote-media.js';
 import { isBlockedAddress } from '../src/openai/url-guard.js';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
 const MB = 1024 * 1024;
 
-/** Sends the gateway's https requests to a local plain-HTTP server instead. */
+/** Sends the gateway's https requests to a local plain-HTTP server instead, noting the agent each used. */
+const agents = [];
 const transport = {
-    request: (url, options) => http.request({ ...options, protocol: 'http:', hostname: url.hostname, port: url.port, path: `${url.pathname}${url.search}` }),
+    request: (url, { agent, ...options }) => {
+        agents.push(agent);
+        return http.request({ ...options, protocol: 'http:', hostname: url.hostname, port: url.port, path: `${url.pathname}${url.search}` });
+    },
 };
 // Loopback stands in for a public host; everything else keeps the real policy.
 const isBlocked = (address) => address !== '127.0.0.1' && isBlockedAddress(address);
@@ -128,6 +133,15 @@ describe('inlineRemoteAttachments', () => {
         await rejectsWith(inline([filePart('/loop')]), 'invalid_attachment_url', /redirects more than 3 times/);
     });
 
+    it('connects through its own agent, never the proxy-aware global one', async () => {
+        routes.set('/cat.png', (req, res) => res.writeHead(200, { 'content-type': 'image/png' }).end(PNG));
+        agents.length = 0;
+        await inline([filePart('/cat.png')]);
+        assert.equal(agents.length, 1);
+        assert.ok(agents[0] instanceof https.Agent);
+        assert.notEqual(agents[0], https.globalAgent);
+    });
+
     it('never connects to a host that resolves to an internal address', async () => {
         let hits = 0;
         routes.set('/cat.png', (req, res) => { hits += 1; res.writeHead(200, { 'content-type': 'image/png' }).end(PNG); });
@@ -137,7 +151,7 @@ describe('inlineRemoteAttachments', () => {
 
     it('reports failed and unreachable downloads as client errors', async () => {
         await rejectsWith(inline([filePart('/missing.png')]), 'invalid_attachment_url', /returned HTTP 404/);
-        await rejectsWith(inline([filePart('/a.png', 'image/png', 'nowhere.test')]), 'invalid_attachment_url', /Could not resolve/);
+        await rejectsWith(inline([filePart('/a.png', 'image/png', 'nowhere.test')]), 'invalid_attachment_url', /'nowhere.test' is not a public address/);
     });
 
     it('enforces the per-attachment and per-request size limits', async () => {

@@ -2,9 +2,14 @@ import { execFile, spawn } from 'node:child_process';
 import net from 'node:net';
 import { createOpencodeClient } from './client.js';
 import { resolveOpencodeBinary, spawnCommand } from './binary.js';
-import { backendEnv, createIsolatedRoot, randomPassword, recordBackendPid, removeIsolatedRoot, sweepStaleRoots } from './isolation.js';
+import {
+    backendEnv, createIsolatedRoot, HEARTBEAT_MS, randomPassword, recordBackendPid, removeIsolatedRoot, sweepStaleRoots, touchIsolatedRoot,
+} from './isolation.js';
 
 const START_TIMEOUT_MS = 60000;
+// Sweeping now and then (not only at start) also clears trees that were
+// still too fresh to judge when this gateway started.
+const SWEEP_EVERY_BEATS = 10;
 const MAX_RESTART_DELAY_MS = 30000;
 const ANSI = /\x1b\[[0-9;]*m/g;
 
@@ -73,12 +78,15 @@ export function createManagedBackend({ opencodePath, logger }) {
     let stopping = false;
     let restartDelay = 1000;
     let ready = false;
+    let heartbeat = null;
 
     async function launch() {
         const binary = resolveOpencodeBinary(opencodePath);
         dirs = createIsolatedRoot();
         const { root } = dirs;
         const port = await freePort();
+        // stop() may have run while the port was found; it could not kill a process not yet spawned.
+        if (stopping) throw new Error('the gateway is stopping');
         const password = randomPassword();
         const { command, args, windowsVerbatimArguments } = spawnCommand(binary.path, ['serve', '--hostname', '127.0.0.1', '--port', String(port)]);
         logger.debug('Starting OpenCode backend', { binary: binary.path, source: binary.source, port });
@@ -136,6 +144,10 @@ export function createManagedBackend({ opencodePath, logger }) {
                 await launch();
                 return;
             } catch (error) {
+                if (stopping) {
+                    removeIsolatedRoot(dirs?.root);
+                    return;
+                }
                 logger.error('OpenCode restart failed', { error: error.message });
                 await terminate();
                 removeIsolatedRoot(dirs?.root);
@@ -156,12 +168,23 @@ export function createManagedBackend({ opencodePath, logger }) {
     return Object.freeze({
         mode: 'managed',
         async start() {
-            const swept = sweepStaleRoots();
-            if (swept) logger.debug(`Removed ${swept} stale backend directories`);
+            const sweep = () => {
+                const swept = sweepStaleRoots();
+                if (swept) logger.debug(`Removed ${swept} stale backend directories`);
+            };
+            sweep();
+            let beats = 0;
+            heartbeat = setInterval(() => {
+                if (dirs) touchIsolatedRoot(dirs.root);
+                beats += 1;
+                if (beats % SWEEP_EVERY_BEATS === 0) sweep();
+            }, HEARTBEAT_MS);
+            heartbeat.unref();
             try {
                 await launch();
             } catch (error) {
                 stopping = true;
+                clearInterval(heartbeat);
                 await terminate();
                 removeIsolatedRoot(dirs?.root);
                 throw error;
@@ -177,6 +200,7 @@ export function createManagedBackend({ opencodePath, logger }) {
         async stop() {
             stopping = true;
             ready = false;
+            clearInterval(heartbeat);
             await terminate();
             removeIsolatedRoot(dirs?.root);
         },

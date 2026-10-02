@@ -84,12 +84,8 @@ async function resolve(hostname) {
  * @returns {Promise<{ address: string, family: number }[]>}
  */
 export async function resolvePublic(hostname, isBlocked = isBlockedAddress) {
-    let records;
-    try {
-        records = await resolve(hostname);
-    } catch {
-        throw invalidRequest(`Could not resolve attachment host '${hostname}'.`, null, 'invalid_attachment_url');
-    }
+    // One message for both failures, so clients cannot probe which internal names exist.
+    const records = await resolve(hostname).catch(() => []);
     if (!records.length || records.some((record) => isBlocked(record.address))) {
         throw invalidRequest(`Attachment host '${hostname}' is not a public address.`, null, 'invalid_attachment_url');
     }

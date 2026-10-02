@@ -10,6 +10,7 @@ const MB = 1024 * 1024;
 // Time allowed to receive a whole request (headers and body). Generation
 // time is not included; REQUEST_TIMEOUT_MS bounds that.
 const BODY_TIMEOUT_MS = 120000;
+const SHUTDOWN_NOTICE_MS = 2000;
 
 export function createBackend(config, logger) {
     return config.OPENCODE_SERVER_URL
@@ -32,6 +33,22 @@ function listen(app, { PORT, HOST }) {
     });
 }
 
+const openConnections = (server) => new Promise((resolve) => {
+    server.getConnections((error, count) => resolve(error ? 0 : count));
+});
+
+/**
+ * Keep listening for `noticeMs` while /ready reports "stopping", so a load
+ * balancer that polls it stops routing here before the listener closes.
+ * Skipped when nobody is connected, so a local Ctrl+C stays instant.
+ * @returns {Promise<number>} how long it waited
+ */
+async function announceShutdown(server, noticeMs) {
+    if (noticeMs <= 0 || (await openConnections(server)) === 0) return 0;
+    await new Promise((resolve) => setTimeout(resolve, noticeMs));
+    return noticeMs;
+}
+
 function drain(server, timeoutMs) {
     return new Promise((resolve) => {
         const force = setTimeout(() => server.closeAllConnections(), timeoutMs);
@@ -45,9 +62,9 @@ function drain(server, timeoutMs) {
  * Wires the OpenCode backend, event hub, catalog and HTTP app together and
  * starts listening.
  * @param {object} config validated config from loadConfig
- * @param {{ logger: object, backend?: object }} deps backend is injectable for tests
+ * @param {{ logger: object, backend?: object, shutdownNoticeMs?: number }} deps backend and notice are injectable for tests
  */
-export async function startGateway(config, { logger, backend = createBackend(config, logger) }) {
+export async function startGateway(config, { logger, backend = createBackend(config, logger), shutdownNoticeMs = SHUTDOWN_NOTICE_MS }) {
     const getClient = () => backend.getClient();
     const hub = createEventHub({ getClient, logger, ownsAllSessions: backend.ownsAllSessions });
     const catalog = createCatalog({ getClient, logger });
@@ -81,7 +98,9 @@ export async function startGateway(config, { logger, backend = createBackend(con
     const stop = () => {
         stopping ??= (async () => {
             startDraining();
-            await drain(server, config.SHUTDOWN_TIMEOUT_MS);
+            // In-flight requests keep running during the notice, so it counts towards SHUTDOWN_TIMEOUT_MS.
+            const noticed = await announceShutdown(server, Math.min(shutdownNoticeMs, config.SHUTDOWN_TIMEOUT_MS / 2));
+            await drain(server, config.SHUTDOWN_TIMEOUT_MS - noticed);
             closeApp();
             await hub.stop();
             await backend.stop();

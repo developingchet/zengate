@@ -11,7 +11,7 @@ import { silentLogger } from '../src/logger.js';
 import { createAttachedBackend, createManagedBackend } from '../src/opencode/backend.js';
 import { resolveOpencodeBinary, spawnCommand } from '../src/opencode/binary.js';
 import {
-    backendConfig, backendEnv, createIsolatedRoot, randomPassword, recordBackendPid, removeIsolatedRoot, sweepStaleRoots,
+    backendConfig, backendEnv, createIsolatedRoot, randomPassword, recordBackendPid, removeIsolatedRoot, sweepStaleRoots, touchIsolatedRoot,
 } from '../src/opencode/isolation.js';
 import { FAKE_VERSION, startFakeOpencode, waitFor } from './helpers/fake-opencode.mjs';
 
@@ -188,7 +188,7 @@ describe('isolation', () => {
         const dirs = createIsolatedRoot();
         try {
             for (const name of ['home', 'workspace', 'data', 'config', 'cache', 'state']) assert.ok(fs.statSync(dirs[name]).isDirectory());
-            assert.match(fs.readFileSync(path.join(dirs.root, 'owner.pid'), 'utf8'), new RegExp(`^${process.pid}\\n[0-9a-f]{16}\\n$`));
+            assert.match(fs.readFileSync(path.join(dirs.root, 'owner.pid'), 'utf8'), new RegExp(`^${process.pid}\\n[0-9a-f]{16}\\n(pid:\\[\\d+\\])?\\n$`));
             assert.ok(path.basename(dirs.root).startsWith('zengate-'));
         } finally {
             removeIsolatedRoot(dirs.root);
@@ -229,6 +229,26 @@ describe('isolation', () => {
         } finally {
             removeIsolatedRoot(earlier.root);
             removeIsolatedRoot(legacy.root);
+        }
+    });
+
+    it('judges trees from another pid namespace by how recently they were touched', () => {
+        const fresh = createIsolatedRoot();
+        const abandoned = createIsolatedRoot();
+        try {
+            for (const dirs of [fresh, abandoned]) fs.writeFileSync(path.join(dirs.root, 'owner.pid'), `1\n0000000000000000\npid:[1]\n`);
+            const old = new Date(Date.now() - 10 * 60 * 1000);
+            fs.utimesSync(path.join(abandoned.root, 'owner.pid'), old, old);
+            sweepStaleRoots();
+            assert.ok(fs.existsSync(fresh.root), 'a container sharing /tmp that is still alive keeps its tree');
+            assert.equal(fs.existsSync(abandoned.root), false);
+            fs.utimesSync(path.join(fresh.root, 'owner.pid'), old, old);
+            touchIsolatedRoot(fresh.root);
+            sweepStaleRoots();
+            assert.ok(fs.existsSync(fresh.root), 'touching the tree keeps it alive');
+        } finally {
+            removeIsolatedRoot(fresh.root);
+            removeIsolatedRoot(abandoned.root);
         }
     });
 

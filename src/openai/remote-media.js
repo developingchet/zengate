@@ -2,6 +2,7 @@ import https from 'node:https';
 import net from 'node:net';
 import { ApiError, invalidRequest, unsupported } from '../server/errors.js';
 import { fileBlock } from './markup.js';
+import { mapLimited } from './map-limited.js';
 import { kindForMime } from './media.js';
 import { isBlockedAddress, MAX_REMOTE_PARTS, publicLookup, resolvePublic } from './url-guard.js';
 
@@ -9,6 +10,9 @@ const FETCH_TIMEOUT_MS = 30000;
 const MAX_REDIRECTS = 3;
 const PARALLEL_FETCHES = 4;
 const GENERIC_MIME = new Set(['', 'application/octet-stream', 'binary/octet-stream']);
+// A private agent: the global one follows HTTPS_PROXY when NODE_USE_ENV_PROXY is
+// set, and a proxy would resolve names itself and bypass publicLookup.
+const DIRECT_AGENT = new https.Agent({ keepAlive: false });
 const USER_AGENT = 'zengate (+https://github.com/developingchet/zengate)';
 
 const attachmentError = (message) => invalidRequest(message, null, 'invalid_attachment_url');
@@ -120,6 +124,7 @@ function requestOnce(url, { transport, lookup, signal }) {
     return new Promise((resolve, reject) => {
         const request = transport.request(url, {
             method: 'GET',
+            agent: DIRECT_AGENT,
             lookup,
             signal,
             headers: { accept: '*/*', 'accept-encoding': 'identity', 'user-agent': USER_AGENT },
@@ -172,28 +177,6 @@ async function inlinePart(part, options) {
     const { mime, kind } = checkedMime(result.contentType, part.mime, part.url, result.body);
     if (kind === 'text') return { type: 'text', text: fileBlock(part.filename, result.body.toString('utf8')) };
     return { ...part, mime, url: `data:${mime};base64,${result.body.toString('base64')}` };
-}
-
-/** Map with at most `limit` calls in flight; the first failure calls `onFailure` and stops new calls. */
-async function mapLimited(items, limit, fn, onFailure) {
-    const results = new Array(items.length);
-    let next = 0;
-    let failed = false;
-    const worker = async () => {
-        while (next < items.length && !failed) {
-            const index = next;
-            next += 1;
-            try {
-                results[index] = await fn(items[index]);
-            } catch (error) {
-                failed = true;
-                onFailure();
-                throw error;
-            }
-        }
-    };
-    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-    return results;
 }
 
 /**

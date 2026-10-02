@@ -1,15 +1,16 @@
 import { invalidRequest, unsupported } from '../server/errors.js';
 import { parseResponseFormat, parseToolChoice } from './chat-request.js';
 import { audioFromBase64, fileAttachment, imageFromUrl, videoFromUrl } from './media.js';
+import { parseMaxTokens } from './length-limit.js';
 import { fileBlock } from './markup.js';
 
 const IGNORED = new Set([
-    'temperature', 'top_p', 'max_output_tokens', 'max_tool_calls', 'top_logprobs', 'truncation', 'include',
+    'temperature', 'top_p', 'max_tool_calls', 'top_logprobs', 'truncation', 'include',
     'user', 'safety_identifier', 'prompt_cache_key', 'prompt_cache_retention', 'service_tier', 'stream_options',
 ]);
 const HANDLED = new Set([
     'model', 'input', 'instructions', 'stream', 'tools', 'tool_choice', 'parallel_tool_calls', 'text',
-    'reasoning', 'store', 'previous_response_id', 'metadata', 'background', 'conversation', 'prompt',
+    'reasoning', 'store', 'max_output_tokens', 'previous_response_id', 'metadata', 'background', 'conversation', 'prompt',
 ]);
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -154,6 +155,7 @@ export function parseResponsesRequest(body, media, store) {
         reasoningEffort: typeof body.reasoning?.effort === 'string' ? body.reasoning.effort : null,
         stop: [],
         n: 1,
+        maxTokens: parseMaxTokens(body, ['max_output_tokens']),
         stream: body.stream === true,
         store: body.store !== false,
         echo: {
