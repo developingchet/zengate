@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import dns from 'node:dns/promises';
 import http from 'node:http';
 import https from 'node:https';
-import { inlineRemoteAttachments } from '../src/openai/remote-media.js';
+import { inlineRemoteAttachments, shown } from '../src/openai/remote-media.js';
 import { isBlockedAddress } from '../src/openai/url-guard.js';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
@@ -147,6 +147,16 @@ describe('inlineRemoteAttachments', () => {
         routes.set('/cat.png', (req, res) => { hits += 1; res.writeHead(200, { 'content-type': 'image/png' }).end(PNG); });
         await rejectsWith(inline([filePart('/cat.png', 'image/png', 'internal.test')]), 'invalid_attachment_url', /not a public address/);
         assert.equal(hits, 0);
+    });
+
+    it('keeps query strings and credentials of attachment URLs out of errors', async () => {
+        await assert.rejects(inline([filePart('/missing.png?X-Amz-Signature=secret-token')]), (error) => {
+            assert.match(error.message, /\/missing\.png\?… returned HTTP 404/);
+            assert.doesNotMatch(error.message, /secret-token/);
+            return true;
+        });
+        assert.equal(shown('https://user:pass@files.test/a.png?sig=1#frag'), 'https://files.test/a.png?…');
+        assert.equal(shown('not a url'), '(invalid URL)');
     });
 
     it('reports failed and unreachable downloads as client errors', async () => {

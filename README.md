@@ -37,7 +37,7 @@ Trade-offs to know about:
 
 - **Prompt overhead.** Each request carries OpenCode's system prompt and tool list (roughly 6–9k input tokens, largely cache hits), and adds about 1–3 s of latency.
 - **Sampling parameters are ignored.** Settings like `temperature` and `top_p` cannot be forwarded through OpenCode. The gateway accepts them and lists them in an `x-gateway-ignored-params` response header.
-- **`max_tokens` is approximate.** OpenCode has no output limit either, so the gateway counts about four characters as a token, cuts the answer there, stops the model and reports `finish_reason: "length"`. Reasoning text does not count.
+- **`max_tokens` is approximate.** OpenCode has no output limit either, so the gateway counts about four characters as a token, cuts the answer there, stops the model and reports `finish_reason: "length"`. As in OpenAI's API, `max_completion_tokens` and `max_output_tokens` include reasoning text and `max_tokens` covers only the answer. Usage for a cut answer is estimated, because OpenCode reports none for a stopped turn.
 - **Upstream terms apply.** Availability, rate limits and the model list are set by OpenCode Zen and can change at any time. Free models may have their own data policies; see the [Zen docs](https://opencode.ai/docs/zen/).
 
 > **Fair use.** zengate talks to Zen only through the official OpenCode CLI and never bypasses its limits or free-tier checks. You are responsible for following OpenCode's terms and fair-use expectations. Run it for yourself or your team, not as a public or resold service.
@@ -279,7 +279,7 @@ sha256sum -c checksums.txt
 - OpenCode tools are never executed, and OpenCode runs isolated from your home directory and configuration.
 - Attachment URLs must be `https` and resolve to public addresses. Loopback, private, link-local and similar ranges (including IPv6 forms that embed them) are refused, which blocks SSRF into your network. The gateway fetches them itself and connects only to the address it checked, including on every redirect, so DNS rebinding cannot reach an internal host. OpenCode never sees the URL.
 - Conversation history is sent to the model as a tagged transcript. Message text, file names and tool names are escaped so they cannot fake another turn, a tool result or a function call.
-- Rate limiting, a bounded queue with a wait limit, body and attachment size limits, and per-request timeouts all apply. Requests that are uploading, queued or running are capped at `MAX_CONCURRENT + MAX_QUEUE`, which bounds the memory held by request bodies. A request with `n` choices uses `n` concurrency slots, and slots are always released on disconnect or timeout.
+- Rate limiting, a bounded queue with a wait limit, body and attachment size limits, and per-request timeouts all apply. Requests that are uploading, queued or running are capped at `MAX_CONCURRENT + MAX_QUEUE`, which bounds the memory held by request bodies, and one client address may be uploading at most a quarter of that at once. Attachment URLs appear in errors and logs without their query string or credentials. A request with `n` choices uses `n` concurrency slots, and slots are always released on disconnect or timeout.
 - Stored responses (`previous_response_id`, `GET /v1/responses/{id}`) are visible only to the API key that created them.
 - The gateway sends no telemetry and never logs request bodies. OpenCode's auto-update and session sharing are disabled.
 

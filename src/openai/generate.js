@@ -1,15 +1,13 @@
 import { CHARS_PER_TOKEN, createLengthLimit } from './length-limit.js';
 import { createStopFilter } from './stop.js';
 import { createToolCallParser } from './tool-calls.js';
+import { estimateUsage, learnPromptOverhead, NO_USAGE } from './usage-estimate.js';
 
 const STOP_REACHED = Symbol('stop-sequence');
 const LENGTH_REACHED = Symbol('max-tokens');
 const SEPARATOR = '\n\n';
 
 const FORCED_RETRY_NOTE = 'To call a function, write a <tool_call>{"name": ..., "arguments": {...}}</tool_call> block as plain text in your reply. Do not describe the call; write the block.';
-
-const NO_USAGE = Object.freeze({ input: 0, output: 0, reasoning: 0, cacheRead: 0 });
-const estimateTokens = (text) => Math.ceil(text.length / CHARS_PER_TOKEN);
 
 const addUsage = (a, b) => ({ input: a.input + b.input, output: a.output + b.output, reasoning: a.reasoning + b.reasoning, cacheRead: a.cacheRead + b.cacheRead });
 
@@ -53,6 +51,15 @@ async function attempt({ runner, prompt, request, signal, maxChars, onText, onRe
         else if (lengthLimit.reached) controller.abort(LENGTH_REACHED);
     };
     const done = () => stopFilter.stopped || lengthLimit.reached;
+    // max_completion_tokens and max_output_tokens include reasoning, as in OpenAI's API; max_tokens does not.
+    const acceptReasoning = (text) => {
+        const allowed = request.limitsReasoning ? lengthLimit.push(text) : text;
+        if (allowed) {
+            reasoning += allowed;
+            onReasoning(allowed);
+        }
+        if (lengthLimit.reached && !controller.signal.aborted) controller.abort(LENGTH_REACHED);
+    };
 
     let result = null;
     try {
@@ -60,8 +67,7 @@ async function attempt({ runner, prompt, request, signal, maxChars, onText, onRe
             signal: controller.signal,
             onDelta(kind, text) {
                 if (kind === 'reasoning') {
-                    reasoning += text;
-                    onReasoning(text);
+                    if (!done()) acceptReasoning(text);
                 } else if (nativeFormat) {
                     held += text;
                 } else if (!done()) {
@@ -75,6 +81,7 @@ async function attempt({ runner, prompt, request, signal, maxChars, onText, onRe
     } finally {
         signal.removeEventListener('abort', forward);
     }
+    if (result?.usage) learnPromptOverhead(prompt, result.usage);
 
     if (result?.structured !== undefined) {
         acceptText(typeof result.structured === 'string' ? result.structured : JSON.stringify(result.structured));
@@ -100,8 +107,8 @@ async function attempt({ runner, prompt, request, signal, maxChars, onText, onRe
         reasoning,
         toolCalls,
         finish,
-        // A cut-off turn is aborted before OpenCode reports usage, so estimate the output side.
-        usage: result?.usage || (done() ? { ...NO_USAGE, output: estimateTokens(content), reasoning: estimateTokens(reasoning) } : NO_USAGE),
+        // A cut-off turn is aborted before OpenCode reports usage, so it is estimated.
+        usage: result?.usage || (done() ? estimateUsage(prompt, content, reasoning) : NO_USAGE),
         nativeToolAttempt: result?.nativeToolAttempt || null,
     };
 }
@@ -137,7 +144,8 @@ export async function generate({ onText: textSink = () => {}, onReasoning: reaso
         }
         emit(text);
     };
-    const remaining = Math.max(1, maxChars - initial.content.length - (initial.content ? SEPARATOR.length : 0));
+    const spent = initial.content.length + (initial.content ? SEPARATOR.length : 0) + (request.limitsReasoning ? initial.reasoning.length : 0);
+    const remaining = Math.max(1, maxChars - spent);
     const second = await attempt({ ...options, maxChars: remaining, prompt: retryPrompt, onText: separate(onText), onReasoning });
     return {
         ...second,

@@ -17,6 +17,20 @@ const USER_AGENT = 'zengate (+https://github.com/developingchet/zengate)';
 
 const attachmentError = (message) => invalidRequest(message, null, 'invalid_attachment_url');
 
+/**
+ * An attachment URL as it may appear in errors and logs: signed URLs carry
+ * their token in the query string, and some URLs carry credentials, so both
+ * are left out.
+ */
+export function shown(url) {
+    try {
+        const parsed = new URL(url);
+        return `${parsed.origin}${parsed.pathname}${parsed.search ? '?…' : ''}`;
+    } catch {
+        return '(invalid URL)';
+    }
+}
+
 function normalizeMime(header) {
     const mime = String(header || '').split(';')[0].trim().toLowerCase();
     return mime === 'image/jpg' ? 'image/jpeg' : mime;
@@ -50,10 +64,10 @@ function checkedMime(header, guessed, url, body) {
     if (GENERIC_MIME.has(mime)) mime = sniffMime(body) || (guessed.includes('*') ? '' : guessed);
     const kind = mime ? kindForMime(mime) : null;
     const expected = kindForMime(guessed.replace('*', 'x'));
-    if (!kind) throw unsupported(`Attachment ${url} has unsupported type '${mime || 'unknown'}'.`);
+    if (!kind) throw unsupported(`Attachment ${shown(url)} has unsupported type '${mime || 'unknown'}'.`);
     if (mime === 'image/svg+xml') throw unsupported('SVG images are not supported; send PNG, JPEG, GIF or WebP.');
     const textFile = kind === 'text' && (expected === 'pdf' || expected === 'text');
-    if (kind !== expected && !textFile) throw attachmentError(`Attachment ${url} is ${mime}, not ${expected}.`);
+    if (kind !== expected && !textFile) throw attachmentError(`Attachment ${shown(url)} is ${mime}, not ${expected}.`);
     return { mime, kind };
 }
 
@@ -69,7 +83,7 @@ function createBudget({ maxBytes, maxTotalBytes }) {
         let used = 0;
         const check = (bytes) => {
             if (used + bytes > maxBytes) {
-                throw invalidRequest(`Attachment ${url} is larger than ${mb(maxBytes)} MB (MAX_MEDIA_MB).`, null, 'attachment_too_large');
+                throw invalidRequest(`Attachment ${shown(url)} is larger than ${mb(maxBytes)} MB (MAX_MEDIA_MB).`, null, 'attachment_too_large');
             }
             if (total + bytes > maxTotalBytes) {
                 throw invalidRequest(`Attachments add up to more than ${mb(maxTotalBytes)} MB (MAX_BODY_MB).`, null, 'attachment_too_large');
@@ -149,17 +163,17 @@ async function download(url, { transport, lookup, isBlocked, signal, limit }) {
         if (status >= 300 && status < 400 && response.headers.location) {
             response.resume();
             const next = new URL(response.headers.location, current);
-            if (next.protocol !== 'https:') throw attachmentError(`Attachment ${url} redirects to a non-https URL.`);
+            if (next.protocol !== 'https:') throw attachmentError(`Attachment ${shown(url)} redirects to a non-https URL.`);
             current = next;
             continue;
         }
         if (status < 200 || status >= 300) {
             response.resume();
-            throw attachmentError(`Attachment ${url} returned HTTP ${status}.`);
+            throw attachmentError(`Attachment ${shown(url)} returned HTTP ${status}.`);
         }
         return { body: await readBody(response, limit), contentType: response.headers['content-type'] };
     }
-    throw attachmentError(`Attachment ${url} redirects more than ${MAX_REDIRECTS} times.`);
+    throw attachmentError(`Attachment ${shown(url)} redirects more than ${MAX_REDIRECTS} times.`);
 }
 
 async function inlinePart(part, options) {
@@ -171,8 +185,8 @@ async function inlinePart(part, options) {
     } catch (error) {
         if (signal.aborted) throw signal.reason ?? error;
         if (error instanceof ApiError) throw error;
-        if (timeout.aborted) throw attachmentError(`Fetching attachment ${part.url} took longer than ${FETCH_TIMEOUT_MS / 1000}s.`);
-        throw attachmentError(`Could not fetch attachment ${part.url}: ${error.code || error.message}.`);
+        if (timeout.aborted) throw attachmentError(`Fetching attachment ${shown(part.url)} took longer than ${FETCH_TIMEOUT_MS / 1000}s.`);
+        throw attachmentError(`Could not fetch attachment ${shown(part.url)}: ${error.code || error.message}.`);
     }
     const { mime, kind } = checkedMime(result.contentType, part.mime, part.url, result.body);
     if (kind === 'text') return { type: 'text', text: fileBlock(part.filename, result.body.toString('utf8')) };

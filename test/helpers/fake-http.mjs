@@ -35,7 +35,7 @@ export function fakeRes() {
 }
 
 export function fakeReq({ path = '/v1/models', method = 'GET', headers = {}, ip = '127.0.0.1' } = {}) {
-    return { path, method, headers, ip, socket: { remoteAddress: ip } };
+    return Object.assign(new EventEmitter(), { path, method, headers, ip, socket: { remoteAddress: ip }, readableEnded: false });
 }
 
 /** Run a middleware and report whether it called next(). */

@@ -168,16 +168,16 @@ export function createManagedBackend({ opencodePath, logger }) {
     return Object.freeze({
         mode: 'managed',
         async start() {
-            const sweep = () => {
-                const swept = sweepStaleRoots();
+            const sweep = async () => {
+                const swept = await sweepStaleRoots();
                 if (swept) logger.debug(`Removed ${swept} stale backend directories`);
             };
-            sweep();
+            await sweep();
             let beats = 0;
             heartbeat = setInterval(() => {
                 if (dirs) touchIsolatedRoot(dirs.root);
                 beats += 1;
-                if (beats % SWEEP_EVERY_BEATS === 0) sweep();
+                if (beats % SWEEP_EVERY_BEATS === 0) void sweep();
             }, HEARTBEAT_MS);
             heartbeat.unref();
             try {

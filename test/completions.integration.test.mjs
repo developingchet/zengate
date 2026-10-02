@@ -77,11 +77,29 @@ describe('legacy completions and max_tokens (fake OpenCode backend)', () => {
         assert.equal(legacy.body.choices[0].finish_reason, 'length');
     });
 
-    it('estimates output usage for a reply cut at max_tokens', async () => {
+    it('estimates usage for a reply cut at max_tokens', async () => {
+        const messages = [{ role: 'user', content: 'go' }];
+        const whole = await stack.json('/v1/chat/completions', { body: { model: MODEL, messages } });
         stack.fake.setBehavior((ctx) => streamTurn(ctx, { text: 'abcdefghijklmnopqrstuvwxyz', chunks: ['abcdef', 'ghijklmnop', 'qrstuvwxyz'] }));
-        const { body } = await stack.json('/v1/chat/completions', { body: { model: MODEL, max_tokens: 2, messages: [{ role: 'user', content: 'go' }] } });
+        const { body } = await stack.json('/v1/chat/completions', { body: { model: MODEL, max_tokens: 2, messages } });
         assert.equal(body.choices[0].finish_reason, 'length');
         assert.equal(body.usage.completion_tokens, 2);
+        assert.equal(body.usage.prompt_tokens, whole.body.usage.prompt_tokens, 'the same prompt is estimated at what OpenCode last measured');
+    });
+
+    it('counts reasoning against max_completion_tokens but not max_tokens', async () => {
+        stack.fake.setBehavior((ctx) => streamTurn(ctx, {
+            reasoning: 'thinking it over', reasoningChunks: ['thinking', ' it over'], text: 'abcdefghijklmnopqrstuvwxyz', chunks: ['abcdef', 'ghijklmnop', 'qrstuvwxyz'],
+        }));
+        const messages = [{ role: 'user', content: 'go' }];
+        const completion = await stack.json('/v1/chat/completions', { body: { model: MODEL, max_completion_tokens: 3, messages } });
+        assert.equal(completion.body.choices[0].finish_reason, 'length');
+        assert.equal(completion.body.choices[0].message.reasoning_content, 'thinking it ');
+        assert.equal(completion.body.choices[0].message.content, '');
+
+        const legacy = await stack.json('/v1/chat/completions', { body: { model: MODEL, max_tokens: 3, messages } });
+        assert.equal(legacy.body.choices[0].message.reasoning_content, 'thinking it over');
+        assert.equal(legacy.body.choices[0].message.content, 'abcdefghijkl');
     });
 
     it('cuts streamed answers at max_tokens', async () => {

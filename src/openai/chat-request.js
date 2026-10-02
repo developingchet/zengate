@@ -179,6 +179,7 @@ export function parseChatRequest(body, media) {
         stop: parseStop(body.stop),
         n,
         maxTokens: parseMaxTokens(body, ['max_completion_tokens', 'max_tokens']),
+        limitsReasoning: body.max_completion_tokens !== undefined && body.max_completion_tokens !== null,
         stream: body.stream === true,
         includeUsage: body.stream_options?.include_usage === true,
         ignored,

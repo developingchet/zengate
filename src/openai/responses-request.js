@@ -156,6 +156,7 @@ export function parseResponsesRequest(body, media, store) {
         stop: [],
         n: 1,
         maxTokens: parseMaxTokens(body, ['max_output_tokens']),
+        limitsReasoning: true,
         stream: body.stream === true,
         store: body.store !== false,
         echo: {

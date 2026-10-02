@@ -220,6 +220,19 @@ describe('admissionMiddleware', () => {
         assert.equal(admission.count(), 0);
         assert.ok(run(admission, fakeReq({ method: 'POST' })).nextCalled);
     });
+
+    it('limits how many bodies one client may be uploading at once', () => {
+        const admission = admissionMiddleware({ limit: 10, perClientUploads: 2 });
+        const slow = [fakeReq({ method: 'POST', ip: '198.51.100.1' }), fakeReq({ method: 'POST', ip: '198.51.100.1' })];
+        for (const req of slow) assert.ok(run(admission, req, fakeRes()).nextCalled);
+        let rejected;
+        admission(fakeReq({ method: 'POST', ip: '198.51.100.1' }), fakeRes(), (error) => { rejected = error; });
+        assert.equal(rejected?.status, 429);
+        assert.ok(run(admission, fakeReq({ method: 'POST', ip: '198.51.100.2' }), fakeRes()).nextCalled, 'other clients still get in');
+        slow[0].emit('end');
+        assert.ok(run(admission, fakeReq({ method: 'POST', ip: '198.51.100.1' }), fakeRes()).nextCalled, 'a finished upload frees its place');
+        assert.equal(admission.count(), 4, 'requests still count against the overall cap after their body arrived');
+    });
 });
 
 describe('slotMiddleware', () => {

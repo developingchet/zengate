@@ -208,7 +208,7 @@ describe('isolation', () => {
         const live = createIsolatedRoot();
         try {
             fs.writeFileSync(path.join(stale.root, 'owner.pid'), String(await deadPid()));
-            assert.ok(sweepStaleRoots() >= 1);
+            assert.ok(await sweepStaleRoots() >= 1);
             assert.equal(fs.existsSync(stale.root), false);
             assert.ok(fs.existsSync(live.root), 'our own tree is kept');
         } finally {
@@ -217,13 +217,13 @@ describe('isolation', () => {
         }
     });
 
-    it('sweeps trees of an earlier process that had the same pid (container restarts)', () => {
+    it('sweeps trees of an earlier process that had the same pid (container restarts)', async () => {
         const earlier = createIsolatedRoot();
         const legacy = createIsolatedRoot();
         try {
             fs.writeFileSync(path.join(earlier.root, 'owner.pid'), `${process.pid}\n0000000000000000\n`);
             fs.writeFileSync(path.join(legacy.root, 'owner.pid'), String(process.pid));
-            assert.ok(sweepStaleRoots() >= 2);
+            assert.ok(await sweepStaleRoots() >= 2);
             assert.equal(fs.existsSync(earlier.root), false);
             assert.equal(fs.existsSync(legacy.root), false);
         } finally {
@@ -232,24 +232,70 @@ describe('isolation', () => {
         }
     });
 
-    it('judges trees from another pid namespace by how recently they were touched', () => {
-        const fresh = createIsolatedRoot();
-        const abandoned = createIsolatedRoot();
-        try {
-            for (const dirs of [fresh, abandoned]) fs.writeFileSync(path.join(dirs.root, 'owner.pid'), `1\n0000000000000000\npid:[1]\n`);
-            const old = new Date(Date.now() - 10 * 60 * 1000);
-            fs.utimesSync(path.join(abandoned.root, 'owner.pid'), old, old);
-            sweepStaleRoots();
-            assert.ok(fs.existsSync(fresh.root), 'a container sharing /tmp that is still alive keeps its tree');
-            assert.equal(fs.existsSync(abandoned.root), false);
-            fs.utimesSync(path.join(fresh.root, 'owner.pid'), old, old);
-            touchIsolatedRoot(fresh.root);
-            sweepStaleRoots();
-            assert.ok(fs.existsSync(fresh.root), 'touching the tree keeps it alive');
-        } finally {
-            removeIsolatedRoot(fresh.root);
-            removeIsolatedRoot(abandoned.root);
-        }
+    describe('trees from another pid namespace', () => {
+        const OLD = new Date(Date.now() - 10 * 60 * 1000);
+        const foreignTree = ({ touched = new Date(), answers = true } = {}) => {
+            const dirs = createIsolatedRoot();
+            fs.writeFileSync(path.join(dirs.root, 'owner.pid'), `1\n0000000000000000\npid:[1]\n`);
+            fs.utimesSync(path.join(dirs.root, 'owner.pid'), touched, touched);
+            // An owner that is gone leaves a socket file nobody listens on, or none at all.
+            if (!answers) fs.rmSync(path.join(dirs.root, 'owner.sock'), { force: true });
+            return dirs;
+        };
+
+        it('keeps trees whose owner touched them recently', async () => {
+            const fresh = foreignTree({ answers: false });
+            try {
+                await sweepStaleRoots();
+                assert.ok(fs.existsSync(fresh.root));
+                fs.utimesSync(path.join(fresh.root, 'owner.pid'), OLD, OLD);
+                touchIsolatedRoot(fresh.root);
+                await sweepStaleRoots();
+                assert.ok(fs.existsSync(fresh.root), 'touching the tree keeps it alive');
+            } finally {
+                removeIsolatedRoot(fresh.root);
+            }
+        });
+
+        it('removes trees whose owner stopped touching them and does not answer', async () => {
+            const abandoned = foreignTree({ touched: OLD, answers: false });
+            try {
+                await sweepStaleRoots();
+                assert.equal(fs.existsSync(abandoned.root), false);
+            } finally {
+                removeIsolatedRoot(abandoned.root);
+            }
+        });
+
+        it('keeps the tree of an owner that is frozen but still answers', { skip: process.platform === 'win32' }, async () => {
+            const frozen = foreignTree({ touched: OLD });
+            try {
+                await sweepStaleRoots();
+                assert.ok(fs.existsSync(frozen.root));
+            } finally {
+                removeIsolatedRoot(frozen.root);
+            }
+        });
+
+        it('tells a stopped owner process from a dead one', { skip: process.platform !== 'linux' }, async () => {
+            const tree = foreignTree({ touched: OLD, answers: false });
+            const socketPath = path.join(tree.root, 'owner.sock');
+            const owner = spawn(process.execPath, ['-e', 'require("net").createServer((s) => s.destroy()).listen(process.argv[1])', socketPath], { stdio: 'ignore' });
+            const exited = new Promise((resolve) => owner.once('exit', resolve));
+            try {
+                await waitFor(() => fs.existsSync(socketPath));
+                owner.kill('SIGSTOP');
+                await sweepStaleRoots();
+                assert.ok(fs.existsSync(tree.root), 'a frozen owner keeps its tree');
+                owner.kill('SIGKILL');
+                await exited;
+                await sweepStaleRoots();
+                assert.equal(fs.existsSync(tree.root), false, 'a dead owner loses it');
+            } finally {
+                owner.kill('SIGKILL');
+                removeIsolatedRoot(tree.root);
+            }
+        });
     });
 
     it('stops the backend a dead gateway left running', { skip: process.platform !== 'linux' }, async () => {
@@ -259,7 +305,7 @@ describe('isolation', () => {
         try {
             recordBackendPid(stale.root, orphan.pid);
             fs.writeFileSync(path.join(stale.root, 'owner.pid'), String(await deadPid()));
-            sweepStaleRoots();
+            await sweepStaleRoots();
             assert.equal(await exited, 'SIGKILL');
             assert.equal(fs.existsSync(stale.root), false);
         } finally {

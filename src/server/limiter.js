@@ -87,15 +87,37 @@ export function createLimiter({ maxConcurrent, maxQueue, queueTimeoutMs = 0 }) {
  * Caps the requests that are reading a body, queued or running. Bodies are
  * parsed before a request reaches the queue, so without this cap many large
  * uploads at once could hold far more memory than MAX_QUEUE implies.
- * @param {{ limit: number }} options
+ *
+ * One client address may have at most `perClientUploads` bodies still
+ * arriving, so a client that trickles its uploads cannot take every place.
+ * Ordinary JSON bodies arrive at once and barely count against it.
+ * @param {{ limit: number, perClientUploads?: number }} options
  */
-export function admissionMiddleware({ limit }) {
+export function admissionMiddleware({ limit, perClientUploads = Math.max(2, Math.ceil(limit / 4)) }) {
     let admitted = 0;
+    const uploading = new Map();
     const middleware = (req, res, next) => {
         if (req.method !== 'POST') return next();
         if (admitted >= limit) return next(busy('Gateway is busy; retry shortly.'));
+        const client = req.ip || '';
+        const inProgress = uploading.get(client) || 0;
+        if (inProgress >= perClientUploads) return next(busy('Too many uploads in progress from this client; retry shortly.'));
         admitted += 1;
-        res.once('close', () => { admitted -= 1; });
+        uploading.set(client, inProgress + 1);
+        let arrived = false;
+        const bodyArrived = () => {
+            if (arrived) return;
+            arrived = true;
+            const left = uploading.get(client) - 1;
+            if (left > 0) uploading.set(client, left);
+            else uploading.delete(client);
+        };
+        if (req.readableEnded) bodyArrived();
+        else req.once('end', bodyArrived);
+        res.once('close', () => {
+            admitted -= 1;
+            bodyArrived();
+        });
         return next();
     };
     middleware.count = () => admitted;
