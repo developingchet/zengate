@@ -4,8 +4,30 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- `QUEUE_TIMEOUT_MS` (default 30s): a request that cannot get a slot in time gets `429 server_busy` instead of waiting silently until a proxy gives up. `REQUEST_TIMEOUT_MS` now starts once the request has a slot.
+- `SHUTDOWN_TIMEOUT_MS` (default 10s) sets how long a shutdown waits for in-flight requests, and `/ready` answers `503` with `"status": "stopping"` as soon as shutdown begins.
+- `RESPONSES_STORE_MB` (default 256) caps the approximate memory of stored responses, on top of the `RESPONSES_STORE_MAX` entry count.
+- An access-log line for each API request (method, path, status, duration, client), at `info` level.
+- A clear error on Node.js versions older than 24.
+
 ### Changed
 - The Socket scan runs on pull requests and pushes to `main` only, no longer weekly. Dependabot alerts and the weekly CI audit already report new advisories in the lockfile.
+- `opencode-ai` is pinned to an exact version, so `npm install -g` and `npx` get the OpenCode release the gateway was tested with.
+- `/ready` no longer reports the OpenCode version; `/metrics` (which needs the key) does.
+- Earlier assistant messages of a turn are fetched from OpenCode in parallel.
+
+### Fixed
+- If restarting a crashed OpenCode backend failed before the process started (for example, the binary was briefly missing), the gateway stopped retrying and stayed unavailable. It now keeps retrying with backoff.
+- Backend scratch directories left by a killed container were never removed, because the restarted gateway had the same pid. A gateway killed outright no longer leaves its OpenCode process running on Linux; the next start stops it.
+- Request bodies are read under a 120-second deadline, so a client can no longer hold a connection open by sending its body very slowly.
+
+### Security
+- The gateway downloads `https` attachments itself and gives OpenCode the content, instead of letting OpenCode fetch the URL. Every connection, including each redirect, goes only to the address that passed the public-address check, so redirects and DNS rebinding cannot reach internal hosts, and remote files are held to `MAX_MEDIA_MB` and `MAX_BODY_MB`.
+- The address check also refuses IPv4-mapped and IPv4-translated IPv6 in every notation, IPv4-compatible, 6to4, Teredo and other special-purpose IPv6 ranges, while NAT64 addresses are judged by the IPv4 address they carry.
+- Message text, file names, tool names and call ids are escaped in the conversation transcript, so a message cannot pose as another turn, a tool result or a function call.
+- Requests that are uploading, queued or running are capped at `MAX_CONCURRENT + MAX_QUEUE`, so concurrent large uploads can no longer hold unbounded memory before reaching the queue.
+- The systemd unit adds `ProtectProc=invisible`, `ProtectClock`, `ProtectHostname`, `ProtectKernelLogs` and `RestrictRealtime`, and the Compose example drops all capabilities and sets `no-new-privileges`.
 
 ## [1.0.4] - 2026-09-27
 

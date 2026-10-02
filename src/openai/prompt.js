@@ -1,10 +1,11 @@
 import { invalidRequest } from '../server/errors.js';
+import { attributeValue, escapeFrames } from './markup.js';
 import { renderToolCall, toolInstructions } from './tool-calls.js';
 
 const TRANSCRIPT_INTRO = 'The conversation so far is below, oldest first. Write only the next assistant reply — no role tags, no transcript markup.';
 
 function attachmentLabel(media, index) {
-    return `[attachment ${index + 1}: ${media.kind}${media.filename ? ` "${media.filename}"` : ''}]`;
+    return `[attachment ${index + 1}: ${media.kind}${media.filename ? ` "${attributeValue(media.filename)}"` : ''}]`;
 }
 
 function toolNameFor(messages, callId) {
@@ -15,7 +16,10 @@ function toolNameFor(messages, callId) {
     return null;
 }
 
-/** Render a multi-turn conversation as one transcript with attachment markers. */
+/**
+ * Render a multi-turn conversation as one transcript with attachment markers.
+ * Message text is escaped so it cannot close its own frame or open another.
+ */
 function renderTranscript(messages, attachments) {
     const blocks = [TRANSCRIPT_INTRO];
     for (const message of messages) {
@@ -23,10 +27,10 @@ function renderTranscript(messages, attachments) {
             attachments.push(media);
             return attachmentLabel(media, attachments.length - 1);
         });
-        const body = [message.content, ...labels].filter(Boolean).join('\n');
+        const body = [escapeFrames(message.content), ...labels].filter(Boolean).join('\n');
         if (message.role === 'tool') {
-            const name = message.name || toolNameFor(messages, message.toolCallId) || 'function';
-            blocks.push(`<tool_result name="${name}" call_id="${message.toolCallId}">\n${body}\n</tool_result>`);
+            const name = attributeValue(message.name || toolNameFor(messages, message.toolCallId), 'function');
+            blocks.push(`<tool_result name="${name}" call_id="${attributeValue(message.toolCallId, 'unknown')}">\n${body}\n</tool_result>`);
         } else if (message.role === 'assistant') {
             const calls = (message.toolCalls || []).map(renderToolCall);
             blocks.push(`<assistant>\n${[body, ...calls].filter(Boolean).join('\n')}\n</assistant>`);

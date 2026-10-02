@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { ApiError, invalidRequest, sendError, toApiError, unsupported } from '../src/server/errors.js';
-import { createLimiter } from '../src/server/limiter.js';
+import { admissionMiddleware, createLimiter } from '../src/server/limiter.js';
 import { createMetrics } from '../src/server/metrics.js';
 import { authMiddleware, rateLimitMiddleware, requestId, securityHeaders } from '../src/server/middleware.js';
 import { slotMiddleware } from '../src/server/slot.js';
@@ -188,6 +188,38 @@ describe('limiter', () => {
         controller.abort();
         assert.equal(limiter.stats().active, 0);
     });
+
+    it('turns a wait longer than queueTimeoutMs into 429 server_busy', async () => {
+        const limiter = createLimiter({ maxConcurrent: 1, maxQueue: 2, queueTimeoutMs: 30 });
+        const first = await limiter.acquire();
+        await assert.rejects(limiter.acquire(), (error) => {
+            assert.equal(error.status, 429);
+            assert.equal(error.code, 'server_busy');
+            assert.match(error.message, /QUEUE_TIMEOUT_MS/);
+            return true;
+        });
+        assert.equal(limiter.stats().queued, 0);
+        first();
+        const granted = await limiter.acquire();
+        granted();
+        assert.equal(limiter.stats().active, 0);
+    });
+});
+
+describe('admissionMiddleware', () => {
+    it('caps requests in flight and frees a place when one closes', () => {
+        const admission = admissionMiddleware({ limit: 1 });
+        const first = fakeRes();
+        assert.ok(run(admission, fakeReq({ method: 'POST' }), first).nextCalled);
+        let rejected;
+        admission(fakeReq({ method: 'POST' }), fakeRes(), (error) => { rejected = error; });
+        assert.equal(rejected.status, 429);
+        assert.equal(rejected.code, 'server_busy');
+        assert.ok(run(admission, fakeReq({ method: 'GET' })).nextCalled, 'requests without a body are not counted');
+        first.emit('close');
+        assert.equal(admission.count(), 0);
+        assert.ok(run(admission, fakeReq({ method: 'POST' })).nextCalled);
+    });
 });
 
 describe('slotMiddleware', () => {
@@ -245,6 +277,18 @@ describe('slotMiddleware', () => {
         assert.equal(reason.status, 499);
         assert.equal(limiter.stats().active, 0);
         assert.equal(res.listenerCount('close'), 0);
+    });
+
+    it('starts the request timeout only once the slot is granted', async () => {
+        const { limiter, req } = setup({ maxQueue: 1, timeoutMs: 60 });
+        const holder = await limiter.acquire();
+        const queued = req.withSlot(async (signal) => {
+            await new Promise((resolve) => setTimeout(resolve, 30));
+            return signal.aborted;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        holder();
+        assert.equal(await queued, false, '50ms queued + 30ms running stays inside a 60ms timeout');
     });
 
     it('does not abort when the response already finished', async () => {

@@ -3,6 +3,7 @@ import { toApiError } from '../server/errors.js';
 import { parseChatRequest } from './chat-request.js';
 import { chatUsage, generate } from './generate.js';
 import { buildPrompt } from './prompt.js';
+import { inlineRemoteAttachments } from './remote-media.js';
 import { openSse } from './sse-writer.js';
 import { assertPublicUrls } from './url-guard.js';
 
@@ -39,9 +40,12 @@ export function chatCompletionsHandler({ runner, catalog, limits }) {
         const prompt = buildPrompt(request, model);
         await assertPublicUrls(prompt.parts);
         if (request.ignored.length) res.set('x-gateway-ignored-params', request.ignored.join(','));
-        await req.withSlot((signal) => (request.stream
-            ? streamChat({ req, res, runner, request, prompt, model, signal })
-            : jsonChat({ res, runner, request, prompt, model, signal })), request.n);
+        await req.withSlot(async (signal) => {
+            const ready = await inlineRemoteAttachments(prompt, { ...limits, signal });
+            return request.stream
+                ? streamChat({ req, res, runner, request, prompt: ready, model, signal })
+                : jsonChat({ res, runner, request, prompt: ready, model, signal });
+        }, request.n);
     };
 }
 

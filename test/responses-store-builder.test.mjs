@@ -28,6 +28,34 @@ describe('responses store', () => {
         assert.ok(Object.isFrozen(s));
     });
 
+    it('evicts the oldest entries to stay within the memory budget', () => {
+        const store = createResponsesStore({ maxEntries: 100, maxChars: 1000 });
+        const s = store.scope('alice');
+        for (const id of ['r1', 'r2', 'r3']) s.save(response(id), history(id.repeat(150)));
+        assert.equal(s.response('r1'), null, 'the oldest entry made room');
+        assert.ok(s.response('r2') && s.response('r3'));
+        assert.ok(store.chars() <= 1000);
+        s.save(response('huge'), history('x'.repeat(2000)));
+        assert.equal(s.response('huge'), null, 'an entry over the whole budget is not stored');
+        s.delete('r2');
+        s.delete('r3');
+        assert.equal(store.chars(), 0);
+    });
+
+    it('counts a chained turn\'s whole history and replaces a re-saved id', () => {
+        const store = createResponsesStore({ maxEntries: 10 });
+        const s = store.scope('alice');
+        const first = history('first turn');
+        s.save(response('r1'), first);
+        const one = store.chars();
+        s.save(response('r2'), [...s.history('r1'), ...history('second turn')]);
+        assert.ok(store.chars() > 2 * one - 50, 'r2 counts the shared first turn as well');
+        const before = store.chars();
+        s.save(response('r2'), [...first, ...history('second turn')]);
+        assert.equal(store.chars(), before);
+        assert.equal(store.size(), 2);
+    });
+
     it('hides one owner\'s entries from another', () => {
         const store = createResponsesStore({ maxEntries: 5 });
         const alice = store.scope('alice');

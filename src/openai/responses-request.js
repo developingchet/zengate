@@ -1,6 +1,7 @@
 import { invalidRequest, unsupported } from '../server/errors.js';
 import { parseResponseFormat, parseToolChoice } from './chat-request.js';
 import { audioFromBase64, fileAttachment, imageFromUrl, videoFromUrl } from './media.js';
+import { fileBlock } from './markup.js';
 
 const IGNORED = new Set([
     'temperature', 'top_p', 'max_output_tokens', 'max_tool_calls', 'top_logprobs', 'truncation', 'include',
@@ -56,7 +57,7 @@ function parseContent(content, param, media, role) {
         }
     });
     if (role !== 'user' && attachments.length) throw invalidRequest('Only user messages may carry attachments.', param);
-    for (const file of attachments.filter((a) => a.kind === 'text')) texts.push(`\n<file name="${file.filename || 'attachment'}">\n${file.text}\n</file>\n`);
+    for (const file of attachments.filter((a) => a.kind === 'text')) texts.push(fileBlock(file.filename, file.text));
     return { text: texts.join(''), media: attachments.filter((a) => a.kind !== 'text') };
 }
 

@@ -67,4 +67,4 @@ zengate removes what it can: CORS is handled in-house instead of by the `cors` p
 
 ## Hardening
 
-See the [Security summary](README.md#security-summary) in the README for the defaults and deployment advice.
+See the [Security summary](README.md#security) in the README for the defaults and deployment advice.

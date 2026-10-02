@@ -2,7 +2,7 @@ import { execFile, spawn } from 'node:child_process';
 import net from 'node:net';
 import { createOpencodeClient } from './client.js';
 import { resolveOpencodeBinary, spawnCommand } from './binary.js';
-import { backendEnv, createIsolatedRoot, randomPassword, removeIsolatedRoot, sweepStaleRoots } from './isolation.js';
+import { backendEnv, createIsolatedRoot, randomPassword, recordBackendPid, removeIsolatedRoot, sweepStaleRoots } from './isolation.js';
 
 const START_TIMEOUT_MS = 60000;
 const MAX_RESTART_DELAY_MS = 30000;
@@ -73,11 +73,11 @@ export function createManagedBackend({ opencodePath, logger }) {
     let stopping = false;
     let restartDelay = 1000;
     let ready = false;
-    let everReady = false;
 
     async function launch() {
         const binary = resolveOpencodeBinary(opencodePath);
         dirs = createIsolatedRoot();
+        const { root } = dirs;
         const port = await freePort();
         const password = randomPassword();
         const { command, args, windowsVerbatimArguments } = spawnCommand(binary.path, ['serve', '--hostname', '127.0.0.1', '--port', String(port)]);
@@ -91,42 +91,66 @@ export function createManagedBackend({ opencodePath, logger }) {
             windowsVerbatimArguments,
         });
         child = proc;
+        if (proc.pid) recordBackendPid(root, proc.pid);
         pipeLogs(proc.stdout, logger);
         pipeLogs(proc.stderr, logger);
         let dead = false;
+        let served = false;
         proc.once('error', (error) => { dead = true; logger.error('Could not start OpenCode', { error: error.message }); });
         proc.once('exit', (code, signal) => {
             dead = true;
-            ready = false;
-            if (!stopping && everReady) onCrash(code, signal, dirs.root);
+            if (child === proc) ready = false;
+            // A backend that dies while starting is handled by whoever is
+            // waiting for launch(); only a crash after it served is restarted here.
+            if (!stopping && served) onCrash(signal || code, root);
         });
         const candidate = createOpencodeClient({ baseUrl: `http://127.0.0.1:${port}`, username: 'opencode', password });
         const health = await waitHealthy(candidate, Date.now() + START_TIMEOUT_MS, () => dead);
         client = candidate;
         version = health.version || null;
         ready = true;
-        everReady = true;
+        served = true;
         restartDelay = 1000;
         logger.info(`OpenCode ${version || ''} backend ready (managed, isolated, tools disabled)`.replace('  ', ' '));
     }
 
-    function onCrash(code, signal, root) {
+    /** Kill the current backend, if any, and wait (briefly) until it is gone. */
+    async function terminate() {
+        const proc = child;
+        if (!proc?.pid || proc.exitCode !== null || proc.signalCode !== null) return;
+        const exited = new Promise((resolve) => proc.once('exit', resolve));
+        killTree(proc);
+        await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5000).unref())]);
+    }
+
+    /** Relaunch with exponential backoff until a backend is up or the gateway stops. */
+    async function restart(reason) {
+        let why = reason;
+        while (!stopping) {
+            const delay = restartDelay;
+            restartDelay = Math.min(MAX_RESTART_DELAY_MS, restartDelay * 2);
+            await new Promise((resolve) => setTimeout(resolve, delay).unref());
+            if (stopping) return;
+            logger.warn(`OpenCode backend ${why}; restarting after ${delay / 1000}s`);
+            try {
+                await launch();
+                return;
+            } catch (error) {
+                logger.error('OpenCode restart failed', { error: error.message });
+                await terminate();
+                removeIsolatedRoot(dirs?.root);
+                why = 'failed to restart';
+            }
+        }
+    }
+
+    function onCrash(reason, root) {
         // Ctrl+C and service managers signal the whole process group, so OpenCode
         // can exit just before the gateway starts stopping. Only warn if the
         // restart actually goes ahead.
-        const reason = signal || code;
         logger.debug(`OpenCode backend exited (${reason})`);
         removeIsolatedRoot(root);
-        const delay = restartDelay;
-        restartDelay = Math.min(MAX_RESTART_DELAY_MS, restartDelay * 2);
-        setTimeout(() => {
-            if (stopping) return;
-            logger.warn(`OpenCode backend exited (${reason}); restarting after ${delay / 1000}s`);
-            launch().catch((error) => {
-                logger.error('OpenCode restart failed', { error: error.message });
-                killTree(child);
-            });
-        }, delay).unref();
+        void restart(`exited (${reason})`);
     }
 
     return Object.freeze({
@@ -138,7 +162,7 @@ export function createManagedBackend({ opencodePath, logger }) {
                 await launch();
             } catch (error) {
                 stopping = true;
-                killTree(child);
+                await terminate();
                 removeIsolatedRoot(dirs?.root);
                 throw error;
             }
@@ -153,11 +177,7 @@ export function createManagedBackend({ opencodePath, logger }) {
         async stop() {
             stopping = true;
             ready = false;
-            if (child && child.exitCode === null) {
-                const exited = new Promise((resolve) => child.once('exit', resolve));
-                killTree(child);
-                await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5000).unref())]);
-            }
+            await terminate();
             removeIsolatedRoot(dirs?.root);
         },
     });

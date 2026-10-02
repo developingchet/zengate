@@ -48,6 +48,11 @@ LockPersonality=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 CapabilityBoundingSet=
 SystemCallArchitectures=native
+ProtectProc=invisible
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelLogs=true
+RestrictRealtime=true
 
 [Install]
 WantedBy=multi-user.target

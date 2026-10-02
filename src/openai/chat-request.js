@@ -1,5 +1,6 @@
 import { invalidRequest, unsupported } from '../server/errors.js';
 import { audioFromBase64, fileAttachment, imageFromUrl, videoFromUrl } from './media.js';
+import { fileBlock } from './markup.js';
 import { newCallId } from './tool-calls.js';
 
 /**
@@ -80,7 +81,7 @@ function parseUserContent(content, param, media) {
         }
     });
     const inlined = attachments.filter((a) => a.kind === 'text');
-    for (const file of inlined) texts.push(`\n<file name="${file.filename || 'attachment'}">\n${file.text}\n</file>\n`);
+    for (const file of inlined) texts.push(fileBlock(file.filename, file.text));
     return { text: texts.join(''), media: attachments.filter((a) => a.kind !== 'text') };
 }
 

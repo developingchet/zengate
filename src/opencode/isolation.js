@@ -4,6 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 
 const ROOT_PREFIX = 'zengate-';
+const OWNER_FILE = 'owner.pid';
+const BACKEND_FILE = 'backend.pid';
+/** Tells this gateway process apart from an earlier one that had the same pid. */
+const INSTANCE_ID = crypto.randomBytes(8).toString('hex');
 
 /** Environment variables the backend legitimately needs from the host. */
 const PASSTHROUGH_ENV = [
@@ -50,8 +54,17 @@ export function createIsolatedRoot() {
         dirs[name] = path.join(root, name);
         fs.mkdirSync(dirs[name], { recursive: true, mode: 0o700 });
     }
-    fs.writeFileSync(path.join(root, 'owner.pid'), String(process.pid), { mode: 0o600 });
+    fs.writeFileSync(path.join(root, OWNER_FILE), `${process.pid}\n${INSTANCE_ID}\n`, { mode: 0o600 });
     return { root, ...dirs };
+}
+
+/** Remember the backend's pid so a later start can stop it if this gateway dies first. */
+export function recordBackendPid(root, pid) {
+    try {
+        fs.writeFileSync(path.join(root, BACKEND_FILE), String(pid), { mode: 0o600 });
+    } catch {
+        // Only orphan cleanup depends on it.
+    }
 }
 
 export function removeIsolatedRoot(root) {
@@ -72,7 +85,54 @@ function isAlive(pid) {
     }
 }
 
-/** Remove scratch trees left behind by gateway processes that no longer exist. */
+/** Only trees this user created are swept; another user's look-alike in a shared /tmp is left alone. */
+function ownedByUs(root) {
+    if (typeof process.getuid !== 'function') return true;
+    try {
+        const stat = fs.lstatSync(root);
+        return stat.isDirectory() && stat.uid === process.getuid();
+    } catch {
+        return false;
+    }
+}
+
+function readOwner(root) {
+    try {
+        const [pid, instance = ''] = fs.readFileSync(path.join(root, OWNER_FILE), 'utf8').split('\n');
+        return { pid: Number(pid), instance: instance.trim() };
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * A tree is stale when its gateway is gone. A container restart reuses the
+ * same pid (often 1), so a tree with our pid but another instance id is
+ * stale too.
+ */
+function isStale(owner) {
+    if (!owner || !(owner.pid > 0)) return false;
+    if (owner.pid === process.pid) return owner.instance !== INSTANCE_ID;
+    return !isAlive(owner.pid);
+}
+
+/**
+ * Stop the OpenCode backend a dead gateway left running (Linux only: the
+ * process must still be working in that tree, so an unrelated process that
+ * reused the pid is never touched).
+ */
+function stopOrphanBackend(root) {
+    if (process.platform !== 'linux') return;
+    try {
+        const pid = Number(fs.readFileSync(path.join(root, BACKEND_FILE), 'utf8'));
+        if (!(pid > 1) || fs.readlinkSync(`/proc/${pid}/cwd`) !== path.join(root, 'workspace')) return;
+        try { process.kill(-pid, 'SIGKILL'); } catch { process.kill(pid, 'SIGKILL'); }
+    } catch {
+        // No pid file, or the backend is already gone.
+    }
+}
+
+/** Remove scratch trees, and stop backends, left behind by gateway processes that no longer exist. */
 export function sweepStaleRoots() {
     let entries = [];
     try {
@@ -84,12 +144,10 @@ export function sweepStaleRoots() {
     for (const entry of entries) {
         if (!entry.isDirectory() || !entry.name.startsWith(ROOT_PREFIX)) continue;
         const root = path.join(os.tmpdir(), entry.name);
-        let pid = 0;
-        try { pid = Number(fs.readFileSync(path.join(root, 'owner.pid'), 'utf8')); } catch { /* unreadable: leave it */ }
-        if (pid > 0 && pid !== process.pid && !isAlive(pid)) {
-            removeIsolatedRoot(root);
-            removed += 1;
-        }
+        if (!ownedByUs(root) || !isStale(readOwner(root))) continue;
+        stopOrphanBackend(root);
+        removeIsolatedRoot(root);
+        removed += 1;
     }
     return removed;
 }

@@ -30,10 +30,10 @@ describe('gateway over HTTP (fake OpenCode backend)', () => {
             assert.equal(response.headers.get('x-powered-by'), null);
         });
 
-        it('reports readiness with the backend mode and version', async () => {
+        it('reports readiness with the backend mode, but not its version', async () => {
             const { status, body } = await stack.json('/ready', { key: null });
             assert.equal(status, 200);
-            assert.deepEqual(body, { status: 'ready', backend: 'attached', opencode: FAKE_VERSION });
+            assert.deepEqual(body, { status: 'ready', backend: 'attached' });
         });
 
         it('rejects requests without or with a wrong key', async () => {
@@ -72,7 +72,8 @@ describe('gateway over HTTP (fake OpenCode backend)', () => {
             assert.equal(status, 200);
             assert.equal(body.backend_ready, true);
             assert.equal(body.events_connected, true);
-            assert.deepEqual(body.slots, { active: 0, queued: 0, maxConcurrent: 8, maxQueue: 32 });
+            assert.deepEqual(body.slots, { active: 0, queued: 0, maxConcurrent: 8, maxQueue: 32, admitted: 0 });
+            assert.equal(body.opencode, FAKE_VERSION);
             assert.ok(body.requests >= 1);
         });
     });
