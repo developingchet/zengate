@@ -1,8 +1,8 @@
 import { invalidRequest, unsupported } from '../server/errors.js';
-import { parseResponseFormat, parseToolChoice } from './chat-request.js';
+import { MAX_TOOLS, parseResponseFormat, parseToolChoice } from './chat-request.js';
 import { audioFromBase64, fileAttachment, imageFromUrl, videoFromUrl } from './media.js';
 import { parseMaxTokens } from './length-limit.js';
-import { fileBlock } from './markup.js';
+import { escapeFileTags, fileBlock } from './markup.js';
 
 const IGNORED = new Set([
     'temperature', 'top_p', 'max_tool_calls', 'top_logprobs', 'truncation', 'include',
@@ -17,6 +17,7 @@ const isObject = (value) => Boolean(value) && typeof value === 'object' && !Arra
 function parseTools(tools, ignored) {
     if (tools === undefined || tools === null) return [];
     if (!Array.isArray(tools)) throw invalidRequest('tools must be an array.', 'tools');
+    if (tools.length > MAX_TOOLS) throw invalidRequest(`tools may contain at most ${MAX_TOOLS} entries.`, 'tools');
     const parsed = [];
     tools.forEach((tool, index) => {
         if (tool?.type === 'function' || tool?.type === 'custom') {
@@ -37,7 +38,7 @@ function parseTools(tools, ignored) {
 }
 
 function parseContent(content, param, media, role) {
-    if (typeof content === 'string') return { text: content, media: [] };
+    if (typeof content === 'string') return { text: escapeFileTags(content), media: [] };
     if (!Array.isArray(content)) throw invalidRequest('content must be a string or an array of parts.', param);
     const texts = [];
     const attachments = [];
@@ -46,8 +47,8 @@ function parseContent(content, param, media, role) {
         const options = { ...media, param: where };
         switch (part?.type) {
             case 'input_text': case 'output_text': case 'text': case 'summary_text':
-                texts.push(String(part.text ?? '')); break;
-            case 'refusal': texts.push(String(part.refusal ?? '')); break;
+                texts.push(escapeFileTags(part.text)); break;
+            case 'refusal': texts.push(escapeFileTags(part.refusal)); break;
             case 'input_image':
                 if (part.file_id) throw unsupported('input_image.file_id requires the Files API; send image_url instead.', where);
                 attachments.push(imageFromUrl(part.image_url, options)); break;

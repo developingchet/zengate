@@ -30,6 +30,11 @@ All notable changes to this project are documented here. The format follows [Kee
 - Request bodies are read under a 120-second deadline, so a client can no longer hold a connection open by sending its body very slowly.
 
 ### Security
+- OpenCode now picks its own port and the gateway connects to the port it reports. The gateway used to find a free port, release it and start OpenCode on it, so another local process could take the port in between and pose as the backend, receiving every prompt.
+- With `ALLOW_NO_AUTH`, requests whose Host is a name other than `localhost` or one in the new `ALLOWED_HOSTS` setting are refused with `403`, so a web page cannot reach the gateway through DNS rebinding.
+- Rate limits and the per-client upload cap count an IPv6 client by its /64 network, since one client can pick any address in it.
+- Stop sequences are limited to 1,000 characters and requests to 128 tools, and message text can no longer pose as an attached file.
+- The config file's temporary copy is created fresh and never written through an existing file or symlink.
 - The gateway downloads `https` attachments itself and gives OpenCode the content, instead of letting OpenCode fetch the URL. Every connection, including each redirect, goes only to the address that passed the public-address check, so redirects and DNS rebinding cannot reach internal hosts, and remote files are held to `MAX_MEDIA_MB` and `MAX_BODY_MB`.
 - The address check also refuses IPv4-mapped and IPv4-translated IPv6 in every notation, IPv4-compatible, 6to4, Teredo and other special-purpose IPv6 ranges, while NAT64 addresses are judged by the IPv4 address they carry.
 - Message text, file names, tool names and call ids are escaped in the conversation transcript, so a message cannot pose as another turn, a tool result or a function call.

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { invalidRequest, toApiError, unsupported } from '../server/errors.js';
-import { MAX_CHOICES } from './chat-request.js';
+import { MAX_CHOICES, parseStop } from './chat-request.js';
 import { chatUsage, generate } from './generate.js';
 import { setIgnoredParams } from './ignored-params.js';
 import { mapLimited } from './map-limited.js';
@@ -28,13 +28,6 @@ function parsePrompts(prompt) {
     }
     if (list.reduce((sum, item) => sum + item.length, 0) > MAX_PROMPT_CHARS) throw invalidRequest('prompt is too long.', 'prompt');
     return list;
-}
-
-function parseStop(stop) {
-    if (stop === undefined || stop === null) return [];
-    const list = Array.isArray(stop) ? stop : [stop];
-    if (list.length > 4 || list.some((s) => typeof s !== 'string')) throw invalidRequest('stop must be a string or up to 4 strings.', 'stop');
-    return list.filter(Boolean);
 }
 
 /**

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { ApiError, invalidRequest, sendError, toApiError, unsupported } from '../src/server/errors.js';
 import { admissionMiddleware, createLimiter } from '../src/server/limiter.js';
 import { createMetrics, routeLabel } from '../src/server/metrics.js';
-import { authMiddleware, rateLimitMiddleware, requestId, securityHeaders } from '../src/server/middleware.js';
+import { clientKey } from '../src/server/client-key.js';
+import { authMiddleware, hostGuard, rateLimitMiddleware, requestId, securityHeaders } from '../src/server/middleware.js';
 import { slotMiddleware } from '../src/server/slot.js';
 import { fakeReq, fakeRes, run } from './helpers/fake-http.mjs';
 
@@ -464,6 +465,47 @@ describe('authMiddleware', () => {
     it('works without an onFailure callback', () => {
         const bare = authMiddleware({ apiKeys: [KEY], allowNoAuth: false });
         assert.equal(run(bare, fakeReq()).res.statusCode, 401);
+    });
+});
+
+describe('clientKey', () => {
+    it('groups IPv6 clients by /64 and leaves IPv4 alone', () => {
+        assert.equal(clientKey(fakeReq({ ip: '203.0.113.9' })), '203.0.113.9');
+        assert.equal(clientKey(fakeReq({ ip: '::ffff:203.0.113.9' })), '203.0.113.9');
+        assert.equal(clientKey(fakeReq({ ip: '2001:db8:1:2:aaaa::1' })), '2001:db8:1:2::/64');
+        assert.equal(clientKey(fakeReq({ ip: '2001:0db8:0001:0002:ffff:ffff:ffff:ffff' })), '2001:db8:1:2::/64');
+        assert.equal(clientKey(fakeReq({ ip: '2001:db8::1' })), '2001:db8:0:0::/64');
+        assert.equal(clientKey(fakeReq({ ip: 'fe80::1%eth0' })), 'fe80:0:0:0::/64');
+        assert.equal(clientKey(fakeReq({ ip: '::1' })), '0:0:0:0::/64');
+    });
+
+    it('rate limits a whole IPv6 /64 as one client', (t) => {
+        const limiter = rateLimitMiddleware({ perMinute: 1 });
+        t.after(() => limiter.close());
+        assert.ok(run(limiter, fakeReq({ ip: '2001:db8:1:2::1' })).nextCalled);
+        assert.equal(run(limiter, fakeReq({ ip: '2001:db8:1:2::2' })).nextCalled, false, 'a new address in the same /64 shares the bucket');
+        assert.ok(run(limiter, fakeReq({ ip: '2001:db8:1:3::1' })).nextCalled, 'another /64 is another client');
+    });
+});
+
+describe('hostGuard', () => {
+    const guard = hostGuard({ allowedHosts: ['gateway.internal'] });
+    const status = (host, path = '/v1/models') => {
+        const { res, nextCalled } = run(guard, fakeReq({ path, headers: { host } }));
+        return nextCalled ? 'next' : res.statusCode;
+    };
+
+    it('accepts names that cannot be rebound', () => {
+        for (const host of ['localhost:8083', 'LOCALHOST', 'localhost.', 'app.localhost:3000', '127.0.0.1:8083', '[::1]:8083', '192.168.1.20', 'gateway.internal:8083']) {
+            assert.equal(status(host), 'next', host);
+        }
+    });
+
+    it('refuses other names, as a DNS-rebinding page would send', () => {
+        for (const host of ['evil.example', 'evil.example:8083', '127.0.0.1.nip.io', 'localhost.evil.example', '', undefined]) {
+            assert.equal(status(host), 403, String(host));
+        }
+        assert.equal(status('evil.example', '/health'), 'next', 'probes stay open');
     });
 });
 

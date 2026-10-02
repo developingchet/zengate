@@ -1,3 +1,4 @@
+import { clientKey } from './client-key.js';
 import { ApiError } from './errors.js';
 
 const busy = (message) => new ApiError(429, message, { code: 'server_busy', retryAfter: 2 });
@@ -99,7 +100,7 @@ export function admissionMiddleware({ limit, perClientUploads = Math.max(2, Math
     const middleware = (req, res, next) => {
         if (req.method !== 'POST') return next();
         if (admitted >= limit) return next(busy('Gateway is busy; retry shortly.'));
-        const client = req.ip || '';
+        const client = clientKey(req);
         const inProgress = uploading.get(client) || 0;
         if (inProgress >= perClientUploads) return next(busy('Too many uploads in progress from this client; retry shortly.'));
         admitted += 1;

@@ -19,8 +19,13 @@ export function attributeValue(value, fallback) {
     return text || fallback;
 }
 
+/** Escape file frame tags, so message text cannot pass itself off as an attached file. */
+export function escapeFileTags(text) {
+    return String(text ?? '').replace(FILE_TAG, '&lt;$1$2');
+}
+
 /** An inlined text attachment; its content cannot close the file frame. */
 export function fileBlock(filename, text) {
-    const body = escapeFrames(text).replace(FILE_TAG, '&lt;$1$2');
+    const body = escapeFileTags(escapeFrames(text));
     return `\n<file name="${attributeValue(filename, 'attachment')}">\n${body}\n</file>\n`;
 }

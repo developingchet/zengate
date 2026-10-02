@@ -1,5 +1,4 @@
 import { execFile, spawn } from 'node:child_process';
-import net from 'node:net';
 import { createOpencodeClient } from './client.js';
 import { resolveOpencodeBinary, spawnCommand } from './binary.js';
 import {
@@ -13,15 +12,34 @@ const SWEEP_EVERY_BEATS = 10;
 const MAX_RESTART_DELAY_MS = 30000;
 const ANSI = /\x1b\[[0-9;]*m/g;
 
-function freePort() {
+const LISTENING = /listening on http:\/\/127\.0\.0\.1:(\d{1,5})\b/;
+
+/**
+ * The port OpenCode reports once it has bound it. OpenCode picks the port
+ * itself (--port 0), so no other process can take it between being chosen
+ * and being bound and then pose as the backend.
+ */
+function boundPort(proc, timeoutMs) {
     return new Promise((resolve, reject) => {
-        const server = net.createServer();
-        server.unref();
-        server.once('error', reject);
-        server.listen(0, '127.0.0.1', () => {
-            const { port } = server.address();
-            server.close(() => resolve(port));
-        });
+        let seen = '';
+        const onData = (chunk) => {
+            seen = `${seen}${chunk}`.slice(-4096);
+            const port = Number(LISTENING.exec(seen.replace(ANSI, ''))?.[1]);
+            if (port > 0 && port < 65536) finish(null, port);
+        };
+        const onExit = () => finish(new Error('OpenCode exited during startup'));
+        const timer = setTimeout(() => finish(new Error(`OpenCode did not start listening in ${timeoutMs / 1000}s`)), timeoutMs);
+        function finish(error, port) {
+            clearTimeout(timer);
+            proc.stdout.off('data', onData);
+            proc.off('exit', onExit);
+            proc.off('error', onExit);
+            if (error) reject(error);
+            else resolve(port);
+        }
+        proc.stdout.on('data', onData);
+        proc.once('exit', onExit);
+        proc.once('error', onExit);
     });
 }
 
@@ -68,7 +86,7 @@ function pipeLogs(stream, logger) {
 
 /**
  * Starts and supervises a private `opencode serve` bound to 127.0.0.1 on a
- * free port with a random password. It restarts with backoff if it crashes.
+ * port it picks itself, with a random password. It restarts with backoff if it crashes.
  */
 export function createManagedBackend({ opencodePath, logger }) {
     let client = null;
@@ -84,12 +102,10 @@ export function createManagedBackend({ opencodePath, logger }) {
         const binary = resolveOpencodeBinary(opencodePath);
         dirs = createIsolatedRoot();
         const { root } = dirs;
-        const port = await freePort();
-        // stop() may have run while the port was found; it could not kill a process not yet spawned.
-        if (stopping) throw new Error('the gateway is stopping');
+        const deadline = Date.now() + START_TIMEOUT_MS;
         const password = randomPassword();
-        const { command, args, windowsVerbatimArguments } = spawnCommand(binary.path, ['serve', '--hostname', '127.0.0.1', '--port', String(port)]);
-        logger.debug('Starting OpenCode backend', { binary: binary.path, source: binary.source, port });
+        const { command, args, windowsVerbatimArguments } = spawnCommand(binary.path, ['serve', '--hostname', '127.0.0.1', '--port', '0']);
+        logger.debug('Starting OpenCode backend', { binary: binary.path, source: binary.source });
         const proc = spawn(command, args, {
             cwd: dirs.workspace,
             env: backendEnv(dirs, password),
@@ -112,8 +128,9 @@ export function createManagedBackend({ opencodePath, logger }) {
             // waiting for launch(); only a crash after it served is restarted here.
             if (!stopping && served) onCrash(signal || code, root);
         });
+        const port = await boundPort(proc, START_TIMEOUT_MS);
         const candidate = createOpencodeClient({ baseUrl: `http://127.0.0.1:${port}`, username: 'opencode', password });
-        const health = await waitHealthy(candidate, Date.now() + START_TIMEOUT_MS, () => dead);
+        const health = await waitHealthy(candidate, deadline, () => dead);
         client = candidate;
         version = health.version || null;
         ready = true;

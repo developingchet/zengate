@@ -152,8 +152,15 @@ export function createEventHub({ getClient, logger, ownsAllSessions }) {
             };
         },
         release(sessionId) {
-            for (const child of children.get(sessionId) || []) owned.delete(child);
+            // Subagents can start subagents of their own, so release the whole tree.
+            const descendants = [...(children.get(sessionId) || [])];
             children.delete(sessionId);
+            while (descendants.length) {
+                const child = descendants.pop();
+                owned.delete(child);
+                descendants.push(...(children.get(child) || []));
+                children.delete(child);
+            }
             owned.delete(sessionId);
             listeners.delete(sessionId);
         },

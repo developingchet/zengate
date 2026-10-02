@@ -7,7 +7,7 @@ import { corsMiddleware } from './cors.js';
 import { ApiError, sendError, toApiError } from './errors.js';
 import { admissionMiddleware, createLimiter } from './limiter.js';
 import { createMetrics } from './metrics.js';
-import { authMiddleware, rateLimitMiddleware, requestId, securityHeaders } from './middleware.js';
+import { authMiddleware, hostGuard, rateLimitMiddleware, requestId, securityHeaders } from './middleware.js';
 import { slotMiddleware } from './slot.js';
 
 const MB = 1024 * 1024;
@@ -98,6 +98,7 @@ export function createApp({ config, logger, backend, hub, catalog, runner, store
         res.status(ready ? 200 : 503).json({ status, backend: backend.mode });
     });
 
+    if (config.ALLOW_NO_AUTH) app.use(hostGuard({ allowedHosts: config.ALLOWED_HOSTS }));
     app.use(rateLimit);
     app.use(authMiddleware({ apiKeys: config.API_KEYS, allowNoAuth: config.ALLOW_NO_AUTH, onFailure: metrics.authFailure }));
     app.get('/metrics', (req, res) => {

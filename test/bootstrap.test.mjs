@@ -28,6 +28,17 @@ describe('generateApiKey / writeConfigFile', () => {
         assert.deepEqual(fs.readdirSync(tmp).filter((name) => name.endsWith('.tmp')), []);
         if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
     });
+
+    it('never writes through a file or link left at its temp path', { skip: process.platform === 'win32' }, () => {
+        const file = path.join(tmp, 'linked.json');
+        const target = path.join(tmp, 'elsewhere.txt');
+        fs.writeFileSync(target, 'untouched', { mode: 0o644 });
+        fs.symlinkSync(target, `${file}.${process.pid}.tmp`);
+        writeConfigFile(file, { API_KEY: 'x' });
+        assert.equal(fs.readFileSync(target, 'utf8'), 'untouched');
+        assert.equal(fs.lstatSync(file).isSymbolicLink(), false);
+        assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+    });
 });
 
 describe('loadOrProvisionConfig', () => {

@@ -224,7 +224,8 @@ Set values as environment variables or in the config file (same names; see [`con
 | Setting | Default | Meaning |
 |---|---|---|
 | `API_KEY` / `API_KEYS` | generated | Gateway key(s), at least 16 characters. `API_KEYS` takes a list for rotation. |
-| `ALLOW_NO_AUTH` | `false` | Serve without any key (explicit opt-out). |
+| `ALLOW_NO_AUTH` | `false` | Serve without any key (explicit opt-out). Requests must then use an IP address, `localhost` or a name in `ALLOWED_HOSTS` as their Host, which stops web pages from reaching the gateway through DNS rebinding. |
+| `ALLOWED_HOSTS` | none | Extra Host names accepted while `ALLOW_NO_AUTH` is on, such as the name a reverse proxy forwards. |
 | `HOST` / `PORT` | `127.0.0.1` / `8083` | Listen address. |
 | `MAX_CONCURRENT` / `MAX_QUEUE` | `8` / `32` | Parallel generations, and how many requests may wait (then `429`). |
 | `QUEUE_TIMEOUT_MS` | `30000` | How long a request may wait for a slot (then `429`). Keep it below your proxy's response timeout. |

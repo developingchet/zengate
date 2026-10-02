@@ -1,7 +1,9 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -115,6 +117,21 @@ describe('managed backend (fake binary)', () => {
             await new Promise((resolve) => setTimeout(resolve, 1500));
             fs.renameSync(`${binary}.away`, binary);
             await waitFor(() => backend.isReady() && backend.getClient().baseUrl !== firstUrl, { timeoutMs: 15000, intervalMs: 50 });
+        } finally {
+            await backend.stop();
+        }
+    });
+
+    it('lets OpenCode pick its port and connects to the one it reports', { timeout: 20000 }, async () => {
+        const probe = http.createServer().listen(0, '127.0.0.1');
+        await once(probe, 'listening');
+        const reported = probe.address().port;
+        await new Promise((resolve) => probe.close(resolve));
+        // The launcher's own --port comes first, so the fake binds it and ignores the gateway's --port 0.
+        const backend = createManagedBackend({ opencodePath: launcher('opencode-fixed-port', ['--port', String(reported)]), logger: silentLogger });
+        try {
+            await backend.start();
+            assert.equal(backend.getClient().baseUrl, `http://127.0.0.1:${reported}`);
         } finally {
             await backend.stop();
         }

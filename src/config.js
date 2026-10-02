@@ -28,6 +28,7 @@ const SPEC = Object.freeze({
     RESPONSES_STORE_MAX: { type: 'int', default: 500, min: 0, max: 100000 },
     RESPONSES_STORE_MB: { type: 'int', default: 256, min: 1, max: 65536 },
     CORS_ORIGINS: { type: 'list', default: [] },
+    ALLOWED_HOSTS: { type: 'list', default: [] },
     TRUST_PROXY: { type: 'hops', default: 0 },
     LOG_LEVEL: { type: 'enum', default: 'info', values: ['debug', 'info', 'warn', 'error'] },
     LOG_JSON: { type: 'bool', default: false },
