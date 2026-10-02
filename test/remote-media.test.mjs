@@ -28,7 +28,7 @@ const routes = new Map();
 before(async () => {
     server = http.createServer((req, res) => {
         const handler = routes.get(req.url);
-        if (handler) handler(req, res);
+        if (typeof handler === 'function') handler(req, res);
         else res.writeHead(404).end();
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));

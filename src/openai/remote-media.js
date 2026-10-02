@@ -63,7 +63,7 @@ function checkedMime(header, guessed, url, body) {
     let mime = normalizeMime(header);
     if (GENERIC_MIME.has(mime)) mime = sniffMime(body) || (guessed.includes('*') ? '' : guessed);
     const kind = mime ? kindForMime(mime) : null;
-    const expected = kindForMime(guessed.replace('*', 'x'));
+    const expected = kindForMime(guessed.replaceAll('*', 'x'));
     if (!kind) throw unsupported(`Attachment ${shown(url)} has unsupported type '${mime || 'unknown'}'.`);
     if (mime === 'image/svg+xml') throw unsupported('SVG images are not supported; send PNG, JPEG, GIF or WebP.');
     const textFile = kind === 'text' && (expected === 'pdf' || expected === 'text');
