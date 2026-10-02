@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-02
+
 ### Added
 - `QUEUE_TIMEOUT_MS` (default 30s): a request that cannot get a slot in time gets `429 server_busy` instead of waiting silently until a proxy gives up. `REQUEST_TIMEOUT_MS` now starts once the request has a slot.
 - `SHUTDOWN_TIMEOUT_MS` (default 10s) sets how long a shutdown waits for in-flight requests, and `/ready` answers `503` with `"status": "stopping"` as soon as shutdown begins.
@@ -104,7 +106,8 @@ First public release (npm only).
 - Stored responses are scoped to the API key that created them.
 - Concurrency slots are weighted by `n` and always released on timeout or disconnect. A request fails fast when the upstream keeps failing.
 
-[Unreleased]: https://github.com/developingchet/zengate/compare/v1.0.4...HEAD
+[Unreleased]: https://github.com/developingchet/zengate/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/developingchet/zengate/releases/tag/v1.1.0
 [1.0.4]: https://github.com/developingchet/zengate/releases/tag/v1.0.4
 [1.0.3]: https://github.com/developingchet/zengate/releases/tag/v1.0.3
 [1.0.2]: https://github.com/developingchet/zengate/releases/tag/v1.0.2
