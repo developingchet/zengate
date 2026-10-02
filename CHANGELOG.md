@@ -17,6 +17,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - `/metrics` serves the Prometheus text format for `?format=prometheus` or an `Accept: text/plain` scrape, and reports request latency, time to first token and rejected tool calls.
 
 ### Changed
+- `max_tokens`, `max_completion_tokens` and `max_output_tokens` are enforced instead of ignored (see Added). Because `max_completion_tokens` and `max_output_tokens` count reasoning, a small limit on a reasoning model can return a short or empty answer; clients that send small limits by habit should raise them or leave them out.
 - The Socket scan runs on pull requests and pushes to `main` only, no longer weekly. Dependabot alerts and the weekly CI audit already report new advisories in the lockfile.
 - `opencode-ai` is pinned to an exact version, so `npm install -g` and `npx` get the OpenCode release the gateway was tested with.
 - `/ready` no longer reports the OpenCode version; `/metrics` (which needs the key) does.
