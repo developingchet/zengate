@@ -1,9 +1,36 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
 const ROOT_PREFIX = 'zengate-';
+const OWNER_FILE = 'owner.pid';
+const BACKEND_FILE = 'backend.pid';
+const SOCKET_FILE = 'owner.sock';
+const PROBE_TIMEOUT_MS = 2000;
+/** Tells this gateway process apart from an earlier one that had the same pid. */
+const INSTANCE_ID = crypto.randomBytes(8).toString('hex');
+/**
+ * A tree made in another pid namespace (another container sharing this
+ * /tmp) cannot be judged by its pid. Its owner listens on a Unix socket in
+ * the tree, which refuses connections once the owner is gone but still
+ * accepts them while it is merely frozen, and touches the tree every
+ * HEARTBEAT_MS for filesystems where that socket cannot be reached.
+ */
+export const HEARTBEAT_MS = 30000;
+const FOREIGN_STALE_MS = 4 * HEARTBEAT_MS;
+
+function pidNamespace() {
+    try {
+        return fs.readlinkSync('/proc/self/ns/pid');
+    } catch {
+        return '';
+    }
+}
+const PID_NAMESPACE = pidNamespace();
+/** Liveness sockets of the trees this process owns, by root. */
+const ownerSockets = new Map();
 
 /** Environment variables the backend legitimately needs from the host. */
 const PASSTHROUGH_ENV = [
@@ -50,12 +77,44 @@ export function createIsolatedRoot() {
         dirs[name] = path.join(root, name);
         fs.mkdirSync(dirs[name], { recursive: true, mode: 0o700 });
     }
-    fs.writeFileSync(path.join(root, 'owner.pid'), String(process.pid), { mode: 0o600 });
+    fs.writeFileSync(path.join(root, OWNER_FILE), `${process.pid}\n${INSTANCE_ID}\n${PID_NAMESPACE}\n`, { mode: 0o600 });
+    holdOwnerSocket(root);
     return { root, ...dirs };
+}
+
+function holdOwnerSocket(root) {
+    if (process.platform === 'win32') return;
+    const server = net.createServer((socket) => socket.destroy());
+    // Without the socket (a path too long for one, say) the heartbeat still vouches for the tree.
+    server.on('error', () => ownerSockets.delete(root));
+    server.listen(path.join(root, SOCKET_FILE));
+    server.unref();
+    ownerSockets.set(root, server);
+}
+
+/** Mark a tree as still in use (see HEARTBEAT_MS). */
+export function touchIsolatedRoot(root) {
+    try {
+        const now = new Date();
+        fs.utimesSync(path.join(root, OWNER_FILE), now, now);
+    } catch {
+        // The tree is gone or being removed.
+    }
+}
+
+/** Remember the backend's pid so a later start can stop it if this gateway dies first. */
+export function recordBackendPid(root, pid) {
+    try {
+        fs.writeFileSync(path.join(root, BACKEND_FILE), String(pid), { mode: 0o600 });
+    } catch {
+        // Only orphan cleanup depends on it.
+    }
 }
 
 export function removeIsolatedRoot(root) {
     if (!root || !path.basename(root).startsWith(ROOT_PREFIX)) return;
+    ownerSockets.get(root)?.close();
+    ownerSockets.delete(root);
     try {
         fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
     } catch {
@@ -72,8 +131,75 @@ function isAlive(pid) {
     }
 }
 
-/** Remove scratch trees left behind by gateway processes that no longer exist. */
-export function sweepStaleRoots() {
+/** Only trees this user created are swept; another user's look-alike in a shared /tmp is left alone. */
+function ownedByUs(root) {
+    if (typeof process.getuid !== 'function') return true;
+    try {
+        const stat = fs.lstatSync(root);
+        return stat.isDirectory() && stat.uid === process.getuid();
+    } catch {
+        return false;
+    }
+}
+
+function readOwner(root) {
+    try {
+        const file = path.join(root, OWNER_FILE);
+        const [pid, instance = '', namespace = ''] = fs.readFileSync(file, 'utf8').split('\n');
+        return { pid: Number(pid), instance: instance.trim(), namespace: namespace.trim(), touchedAt: fs.statSync(file).mtimeMs };
+    } catch {
+        return null;
+    }
+}
+
+/** Whether the gateway that owns `root` still accepts connections on its liveness socket. */
+function ownerAnswers(root) {
+    if (process.platform === 'win32') return Promise.resolve(false);
+    return new Promise((resolve) => {
+        const socket = net.connect(path.join(root, SOCKET_FILE));
+        const settle = (alive) => {
+            socket.destroy();
+            resolve(alive);
+        };
+        socket.setTimeout(PROBE_TIMEOUT_MS, () => settle(true));
+        socket.once('connect', () => settle(true));
+        socket.once('error', () => settle(false));
+    });
+}
+
+/**
+ * A tree is stale when its gateway is gone. A container restart reuses the
+ * same pid (often 1), so a tree with our pid but another instance id is
+ * stale too. A tree from another pid namespace is stale once its owner has
+ * stopped touching it and no longer answers on its socket.
+ */
+async function isStale(root, owner) {
+    if (!owner || !(owner.pid > 0)) return false;
+    if (owner.namespace && owner.namespace !== PID_NAMESPACE) {
+        return Date.now() - owner.touchedAt > FOREIGN_STALE_MS && !(await ownerAnswers(root));
+    }
+    if (owner.pid === process.pid) return owner.instance !== INSTANCE_ID;
+    return !isAlive(owner.pid);
+}
+
+/**
+ * Stop the OpenCode backend a dead gateway left running (Linux only: the
+ * process must still be working in that tree, so an unrelated process that
+ * reused the pid is never touched).
+ */
+function stopOrphanBackend(root) {
+    if (process.platform !== 'linux') return;
+    try {
+        const pid = Number(fs.readFileSync(path.join(root, BACKEND_FILE), 'utf8'));
+        if (!(pid > 1) || fs.readlinkSync(`/proc/${pid}/cwd`) !== path.join(root, 'workspace')) return;
+        try { process.kill(-pid, 'SIGKILL'); } catch { process.kill(pid, 'SIGKILL'); }
+    } catch {
+        // No pid file, or the backend is already gone.
+    }
+}
+
+/** Remove scratch trees, and stop backends, left behind by gateway processes that no longer exist. */
+export async function sweepStaleRoots() {
     let entries = [];
     try {
         entries = fs.readdirSync(os.tmpdir(), { withFileTypes: true });
@@ -84,12 +210,10 @@ export function sweepStaleRoots() {
     for (const entry of entries) {
         if (!entry.isDirectory() || !entry.name.startsWith(ROOT_PREFIX)) continue;
         const root = path.join(os.tmpdir(), entry.name);
-        let pid = 0;
-        try { pid = Number(fs.readFileSync(path.join(root, 'owner.pid'), 'utf8')); } catch { /* unreadable: leave it */ }
-        if (pid > 0 && pid !== process.pid && !isAlive(pid)) {
-            removeIsolatedRoot(root);
-            removed += 1;
-        }
+        if (!ownedByUs(root) || !(await isStale(root, readOwner(root)))) continue;
+        stopOrphanBackend(root);
+        removeIsolatedRoot(root);
+        removed += 1;
     }
     return removed;
 }

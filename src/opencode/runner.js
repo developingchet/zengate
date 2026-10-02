@@ -107,8 +107,7 @@ export function createRunner({ getClient, hub, logger, agent }) {
         if (connected && earlier.length === 0) return [last];
         try {
             if (!connected) return (await client.messages(sessionId, { signal })).filter((m) => m?.info?.role === 'assistant');
-            const fetched = [];
-            for (const messageId of earlier) fetched.push(await client.message(sessionId, messageId, { signal }));
+            const fetched = await Promise.all(earlier.map((messageId) => client.message(sessionId, messageId, { signal })));
             return [...fetched, last];
         } catch (error) {
             if (signal.aborted) throw signal.reason ?? error;

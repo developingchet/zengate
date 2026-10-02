@@ -13,7 +13,10 @@ export function generateApiKey() {
 export function writeConfigFile(filePath, data) {
     fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
     const temp = `${filePath}.${process.pid}.tmp`;
-    fs.writeFileSync(temp, `${JSON.stringify(data, null, 4)}\n`, { mode: 0o600 });
+    // Never write through a file or symlink already at the temp path: unlink
+    // removes a link itself, and 'wx' creates the file fresh with mode 0600.
+    fs.rmSync(temp, { force: true });
+    fs.writeFileSync(temp, `${JSON.stringify(data, null, 4)}\n`, { mode: 0o600, flag: 'wx' });
     fs.renameSync(temp, filePath);
 }
 

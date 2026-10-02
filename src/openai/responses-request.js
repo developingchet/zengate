@@ -1,20 +1,23 @@
 import { invalidRequest, unsupported } from '../server/errors.js';
-import { parseResponseFormat, parseToolChoice } from './chat-request.js';
+import { MAX_TOOLS, parseResponseFormat, parseToolChoice } from './chat-request.js';
 import { audioFromBase64, fileAttachment, imageFromUrl, videoFromUrl } from './media.js';
+import { parseMaxTokens } from './length-limit.js';
+import { escapeFileTags, fileBlock } from './markup.js';
 
 const IGNORED = new Set([
-    'temperature', 'top_p', 'max_output_tokens', 'max_tool_calls', 'top_logprobs', 'truncation', 'include',
+    'temperature', 'top_p', 'max_tool_calls', 'top_logprobs', 'truncation', 'include',
     'user', 'safety_identifier', 'prompt_cache_key', 'prompt_cache_retention', 'service_tier', 'stream_options',
 ]);
 const HANDLED = new Set([
     'model', 'input', 'instructions', 'stream', 'tools', 'tool_choice', 'parallel_tool_calls', 'text',
-    'reasoning', 'store', 'previous_response_id', 'metadata', 'background', 'conversation', 'prompt',
+    'reasoning', 'store', 'max_output_tokens', 'previous_response_id', 'metadata', 'background', 'conversation', 'prompt',
 ]);
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 function parseTools(tools, ignored) {
     if (tools === undefined || tools === null) return [];
     if (!Array.isArray(tools)) throw invalidRequest('tools must be an array.', 'tools');
+    if (tools.length > MAX_TOOLS) throw invalidRequest(`tools may contain at most ${MAX_TOOLS} entries.`, 'tools');
     const parsed = [];
     tools.forEach((tool, index) => {
         if (tool?.type === 'function' || tool?.type === 'custom') {
@@ -35,7 +38,7 @@ function parseTools(tools, ignored) {
 }
 
 function parseContent(content, param, media, role) {
-    if (typeof content === 'string') return { text: content, media: [] };
+    if (typeof content === 'string') return { text: escapeFileTags(content), media: [] };
     if (!Array.isArray(content)) throw invalidRequest('content must be a string or an array of parts.', param);
     const texts = [];
     const attachments = [];
@@ -44,8 +47,8 @@ function parseContent(content, param, media, role) {
         const options = { ...media, param: where };
         switch (part?.type) {
             case 'input_text': case 'output_text': case 'text': case 'summary_text':
-                texts.push(String(part.text ?? '')); break;
-            case 'refusal': texts.push(String(part.refusal ?? '')); break;
+                texts.push(escapeFileTags(part.text)); break;
+            case 'refusal': texts.push(escapeFileTags(part.refusal)); break;
             case 'input_image':
                 if (part.file_id) throw unsupported('input_image.file_id requires the Files API; send image_url instead.', where);
                 attachments.push(imageFromUrl(part.image_url, options)); break;
@@ -56,7 +59,7 @@ function parseContent(content, param, media, role) {
         }
     });
     if (role !== 'user' && attachments.length) throw invalidRequest('Only user messages may carry attachments.', param);
-    for (const file of attachments.filter((a) => a.kind === 'text')) texts.push(`\n<file name="${file.filename || 'attachment'}">\n${file.text}\n</file>\n`);
+    for (const file of attachments.filter((a) => a.kind === 'text')) texts.push(fileBlock(file.filename, file.text));
     return { text: texts.join(''), media: attachments.filter((a) => a.kind !== 'text') };
 }
 
@@ -153,6 +156,8 @@ export function parseResponsesRequest(body, media, store) {
         reasoningEffort: typeof body.reasoning?.effort === 'string' ? body.reasoning.effort : null,
         stop: [],
         n: 1,
+        maxTokens: parseMaxTokens(body, ['max_output_tokens']),
+        limitsReasoning: true,
         stream: body.stream === true,
         store: body.store !== false,
         echo: {

@@ -2,7 +2,10 @@ import crypto from 'node:crypto';
 import { toApiError } from '../server/errors.js';
 import { parseChatRequest } from './chat-request.js';
 import { chatUsage, generate } from './generate.js';
+import { setIgnoredParams } from './ignored-params.js';
+import { mapLimited } from './map-limited.js';
 import { buildPrompt } from './prompt.js';
+import { inlineRemoteAttachments } from './remote-media.js';
 import { openSse } from './sse-writer.js';
 import { assertPublicUrls } from './url-guard.js';
 
@@ -38,15 +41,19 @@ export function chatCompletionsHandler({ runner, catalog, limits }) {
         const model = await catalog.resolve(request.model);
         const prompt = buildPrompt(request, model);
         await assertPublicUrls(prompt.parts);
-        if (request.ignored.length) res.set('x-gateway-ignored-params', request.ignored.join(','));
-        await req.withSlot((signal) => (request.stream
-            ? streamChat({ req, res, runner, request, prompt, model, signal })
-            : jsonChat({ res, runner, request, prompt, model, signal })), request.n);
+        setIgnoredParams(res, request.ignored);
+        await req.withSlot(async (signal, parallel) => {
+            const ready = await inlineRemoteAttachments(prompt, { ...limits, signal });
+            const context = { req, res, runner, request, prompt: ready, model, signal, parallel };
+            return request.stream ? streamChat(context) : jsonChat(context);
+        }, request.n);
     };
 }
 
-async function jsonChat({ res, runner, request, prompt, model, signal }) {
-    const results = await Promise.all(Array.from({ length: request.n }, () => generate({ runner, prompt, request, signal })));
+const choiceIndexes = (n) => Array.from({ length: n }, (_, index) => index);
+
+async function jsonChat({ req, res, runner, request, prompt, model, signal, parallel }) {
+    const results = await mapLimited(choiceIndexes(request.n), parallel, () => generate({ runner, prompt, request, signal, onFirstToken: req.markFirstToken }));
     res.json({
         id: completionId(),
         object: 'chat.completion',
@@ -60,7 +67,7 @@ async function jsonChat({ res, runner, request, prompt, model, signal }) {
     });
 }
 
-async function streamChat({ req, res, runner, request, prompt, model, signal }) {
+async function streamChat({ req, res, runner, request, prompt, model, signal, parallel }) {
     const id = completionId();
     const created = now();
     const sse = openSse(res);
@@ -72,8 +79,8 @@ async function streamChat({ req, res, runner, request, prompt, model, signal }) 
 
     for (let index = 0; index < request.n; index += 1) chunk(index, { role: 'assistant', content: '', refusal: null });
     try {
-        const results = await Promise.all(Array.from({ length: request.n }, (_, index) => generate({
-            runner, prompt, request, signal,
+        const results = await mapLimited(choiceIndexes(request.n), parallel, (index) => generate({
+            runner, prompt, request, signal, onFirstToken: req.markFirstToken,
             onText: (text) => chunk(index, { content: text }),
             onReasoning: (text) => chunk(index, { reasoning_content: text }),
         }).then((result) => {
@@ -82,7 +89,7 @@ async function streamChat({ req, res, runner, request, prompt, model, signal }) 
             else if (calls.length) chunk(index, { tool_calls: calls.map((call, position) => ({ index: position, ...call })) });
             chunk(index, {}, finishReason(result, request.legacyFunctions));
             return result;
-        })));
+        }));
         if (request.includeUsage) {
             sse.send({ id, object: 'chat.completion.chunk', created, model: model.id, system_fingerprint: null, choices: [], usage: chatUsage(results.map((r) => r.usage)) });
         }

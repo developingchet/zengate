@@ -1,9 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { ApiError, invalidRequest, sendError, toApiError, unsupported } from '../src/server/errors.js';
-import { createLimiter } from '../src/server/limiter.js';
-import { createMetrics } from '../src/server/metrics.js';
-import { authMiddleware, rateLimitMiddleware, requestId, securityHeaders } from '../src/server/middleware.js';
+import { admissionMiddleware, createLimiter } from '../src/server/limiter.js';
+import { createMetrics, routeLabel } from '../src/server/metrics.js';
+import { clientKey } from '../src/server/client-key.js';
+import { authMiddleware, hostGuard, rateLimitMiddleware, requestId, securityHeaders } from '../src/server/middleware.js';
 import { slotMiddleware } from '../src/server/slot.js';
 import { fakeReq, fakeRes, run } from './helpers/fake-http.mjs';
 
@@ -188,6 +189,51 @@ describe('limiter', () => {
         controller.abort();
         assert.equal(limiter.stats().active, 0);
     });
+
+    it('turns a wait longer than queueTimeoutMs into 429 server_busy', async () => {
+        const limiter = createLimiter({ maxConcurrent: 1, maxQueue: 2, queueTimeoutMs: 30 });
+        const first = await limiter.acquire();
+        await assert.rejects(limiter.acquire(), (error) => {
+            assert.equal(error.status, 429);
+            assert.equal(error.code, 'server_busy');
+            assert.match(error.message, /QUEUE_TIMEOUT_MS/);
+            return true;
+        });
+        assert.equal(limiter.stats().queued, 0);
+        first();
+        const granted = await limiter.acquire();
+        granted();
+        assert.equal(limiter.stats().active, 0);
+    });
+});
+
+describe('admissionMiddleware', () => {
+    it('caps requests in flight and frees a place when one closes', () => {
+        const admission = admissionMiddleware({ limit: 1 });
+        const first = fakeRes();
+        assert.ok(run(admission, fakeReq({ method: 'POST' }), first).nextCalled);
+        let rejected;
+        admission(fakeReq({ method: 'POST' }), fakeRes(), (error) => { rejected = error; });
+        assert.equal(rejected.status, 429);
+        assert.equal(rejected.code, 'server_busy');
+        assert.ok(run(admission, fakeReq({ method: 'GET' })).nextCalled, 'requests without a body are not counted');
+        first.emit('close');
+        assert.equal(admission.count(), 0);
+        assert.ok(run(admission, fakeReq({ method: 'POST' })).nextCalled);
+    });
+
+    it('limits how many bodies one client may be uploading at once', () => {
+        const admission = admissionMiddleware({ limit: 10, perClientUploads: 2 });
+        const slow = [fakeReq({ method: 'POST', ip: '198.51.100.1' }), fakeReq({ method: 'POST', ip: '198.51.100.1' })];
+        for (const req of slow) assert.ok(run(admission, req, fakeRes()).nextCalled);
+        let rejected;
+        admission(fakeReq({ method: 'POST', ip: '198.51.100.1' }), fakeRes(), (error) => { rejected = error; });
+        assert.equal(rejected?.status, 429);
+        assert.ok(run(admission, fakeReq({ method: 'POST', ip: '198.51.100.2' }), fakeRes()).nextCalled, 'other clients still get in');
+        slow[0].emit('end');
+        assert.ok(run(admission, fakeReq({ method: 'POST', ip: '198.51.100.1' }), fakeRes()).nextCalled, 'a finished upload frees its place');
+        assert.equal(admission.count(), 4, 'requests still count against the overall cap after their body arrived');
+    });
 });
 
 describe('slotMiddleware', () => {
@@ -247,6 +293,18 @@ describe('slotMiddleware', () => {
         assert.equal(res.listenerCount('close'), 0);
     });
 
+    it('starts the request timeout only once the slot is granted', async () => {
+        const { limiter, req } = setup({ maxQueue: 1, timeoutMs: 60 });
+        const holder = await limiter.acquire();
+        const queued = req.withSlot(async (signal) => {
+            await new Promise((resolve) => setTimeout(resolve, 30));
+            return signal.aborted;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        holder();
+        assert.equal(await queued, false, '50ms queued + 30ms running stays inside a 60ms timeout');
+    });
+
     it('does not abort when the response already finished', async () => {
         const { req, res } = setup();
         const aborted = await req.withSlot(async (signal) => {
@@ -255,6 +313,41 @@ describe('slotMiddleware', () => {
             return signal.aborted;
         });
         assert.equal(aborted, false);
+    });
+
+    it('tells the work how many slots it actually holds', async () => {
+        const { req } = setup({ maxConcurrent: 2 });
+        assert.equal(await req.withSlot(async (signal, granted) => granted, 4), 2);
+        assert.equal(await req.withSlot(async (signal, granted) => granted), 1);
+    });
+
+    it('stops work that is still running when the slot is released', async () => {
+        const { limiter, req } = setup({ maxConcurrent: 2 });
+        let sibling;
+        await assert.rejects(req.withSlot(async (signal) => {
+            sibling = new Promise((resolve) => signal.addEventListener('abort', () => resolve(signal.reason)));
+            throw new Error('first choice failed');
+        }, 2), /first choice failed/);
+        assert.equal(limiter.stats().active, 0);
+        assert.equal((await sibling).code, 'cancelled');
+    });
+});
+
+describe('routeLabel', () => {
+    it('keeps metric labels to a fixed set of routes', () => {
+        assert.equal(routeLabel('/v1/chat/completions?x=1'), '/chat/completions');
+        assert.equal(routeLabel('/responses/resp_123'), '/responses/{id}');
+        assert.equal(routeLabel('/v1/models/opencode/big-pickle'), '/models/{id}');
+        assert.equal(routeLabel('/v1/anything/else'), 'other');
+        assert.equal(routeLabel('/v1'), 'other');
+        assert.equal(routeLabel('/v1/models//'), '/models');
+    });
+
+    it('labels very long paths without scanning them', () => {
+        const started = performance.now();
+        assert.equal(routeLabel(`${'/'.repeat(16000)}x`), 'other');
+        assert.equal(routeLabel(`/v1/chat/completions${'/'.repeat(16000)}`), 'other');
+        assert.ok(performance.now() - started < 50);
     });
 });
 
@@ -266,13 +359,18 @@ describe('metrics', () => {
         metrics.middleware({}, res, () => { nextCalled = true; });
         assert.ok(nextCalled);
         res.statusCode = 201;
-        res.emit('finish');
+        res.writableFinished = true;
+        res.emit('close');
+        const abandoned = fakeRes();
+        metrics.middleware({}, abandoned, () => {});
+        abandoned.statusCode = 200;
+        abandoned.emit('close');
         metrics.authFailure();
         metrics.rateLimited();
         metrics.rateLimited();
         const snapshot = metrics.snapshot({ extra: true });
-        assert.equal(snapshot.requests, 1);
-        assert.deepEqual(snapshot.responses_by_status, { 201: 1 });
+        assert.equal(snapshot.requests, 2);
+        assert.deepEqual(snapshot.responses_by_status, { 201: 1, 499: 1 }, 'a client that left early counts as 499');
         assert.equal(snapshot.auth_failures, 1);
         assert.equal(snapshot.rate_limited, 2);
         assert.equal(snapshot.extra, true);
@@ -367,6 +465,47 @@ describe('authMiddleware', () => {
     it('works without an onFailure callback', () => {
         const bare = authMiddleware({ apiKeys: [KEY], allowNoAuth: false });
         assert.equal(run(bare, fakeReq()).res.statusCode, 401);
+    });
+});
+
+describe('clientKey', () => {
+    it('groups IPv6 clients by /64 and leaves IPv4 alone', () => {
+        assert.equal(clientKey(fakeReq({ ip: '203.0.113.9' })), '203.0.113.9');
+        assert.equal(clientKey(fakeReq({ ip: '::ffff:203.0.113.9' })), '203.0.113.9');
+        assert.equal(clientKey(fakeReq({ ip: '2001:db8:1:2:aaaa::1' })), '2001:db8:1:2::/64');
+        assert.equal(clientKey(fakeReq({ ip: '2001:0db8:0001:0002:ffff:ffff:ffff:ffff' })), '2001:db8:1:2::/64');
+        assert.equal(clientKey(fakeReq({ ip: '2001:db8::1' })), '2001:db8:0:0::/64');
+        assert.equal(clientKey(fakeReq({ ip: 'fe80::1%eth0' })), 'fe80:0:0:0::/64');
+        assert.equal(clientKey(fakeReq({ ip: '::1' })), '0:0:0:0::/64');
+    });
+
+    it('rate limits a whole IPv6 /64 as one client', (t) => {
+        const limiter = rateLimitMiddleware({ perMinute: 1 });
+        t.after(() => limiter.close());
+        assert.ok(run(limiter, fakeReq({ ip: '2001:db8:1:2::1' })).nextCalled);
+        assert.equal(run(limiter, fakeReq({ ip: '2001:db8:1:2::2' })).nextCalled, false, 'a new address in the same /64 shares the bucket');
+        assert.ok(run(limiter, fakeReq({ ip: '2001:db8:1:3::1' })).nextCalled, 'another /64 is another client');
+    });
+});
+
+describe('hostGuard', () => {
+    const guard = hostGuard({ allowedHosts: ['gateway.internal'] });
+    const status = (host, path = '/v1/models') => {
+        const { res, nextCalled } = run(guard, fakeReq({ path, headers: { host } }));
+        return nextCalled ? 'next' : res.statusCode;
+    };
+
+    it('accepts names that cannot be rebound', () => {
+        for (const host of ['localhost:8083', 'LOCALHOST', 'localhost.', 'app.localhost:3000', '127.0.0.1:8083', '[::1]:8083', '192.168.1.20', 'gateway.internal:8083']) {
+            assert.equal(status(host), 'next', host);
+        }
+    });
+
+    it('refuses other names, as a DNS-rebinding page would send', () => {
+        for (const host of ['evil.example', 'evil.example:8083', '127.0.0.1.nip.io', 'localhost.evil.example', '', undefined]) {
+            assert.equal(status(host), 403, String(host));
+        }
+        assert.equal(status('evil.example', '/health'), 'next', 'probes stay open');
     });
 });
 

@@ -1,7 +1,9 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +12,9 @@ import { createBackend } from '../src/gateway.js';
 import { silentLogger } from '../src/logger.js';
 import { createAttachedBackend, createManagedBackend } from '../src/opencode/backend.js';
 import { resolveOpencodeBinary, spawnCommand } from '../src/opencode/binary.js';
-import { backendConfig, backendEnv, createIsolatedRoot, randomPassword, removeIsolatedRoot, sweepStaleRoots } from '../src/opencode/isolation.js';
+import {
+    backendConfig, backendEnv, createIsolatedRoot, randomPassword, recordBackendPid, removeIsolatedRoot, sweepStaleRoots, touchIsolatedRoot,
+} from '../src/opencode/isolation.js';
 import { FAKE_VERSION, startFakeOpencode, waitFor } from './helpers/fake-opencode.mjs';
 
 const FAKE_SERVE = fileURLToPath(new URL('./helpers/fake-serve.mjs', import.meta.url));
@@ -100,6 +104,39 @@ describe('managed backend (fake binary)', () => {
         assert.equal(backend.isReady(), false);
     });
 
+    it('keeps retrying when a restart fails before OpenCode even starts', { timeout: 30000 }, async () => {
+        const binary = launcher('opencode-flaky');
+        const backend = createManagedBackend({ opencodePath: binary, logger: silentLogger });
+        try {
+            await backend.start();
+            const firstUrl = backend.getClient().baseUrl;
+            fs.renameSync(binary, `${binary}.away`);
+            await fetch(`${firstUrl}/crash`).then((response) => response.text()).catch(() => {});
+            await waitFor(() => !backend.isReady(), { timeoutMs: 5000 });
+            // The first restart (after 1s) finds no binary; put it back before the next one.
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            fs.renameSync(`${binary}.away`, binary);
+            await waitFor(() => backend.isReady() && backend.getClient().baseUrl !== firstUrl, { timeoutMs: 15000, intervalMs: 50 });
+        } finally {
+            await backend.stop();
+        }
+    });
+
+    it('lets OpenCode pick its port and connects to the one it reports', { timeout: 20000 }, async () => {
+        const probe = http.createServer().listen(0, '127.0.0.1');
+        await once(probe, 'listening');
+        const reported = probe.address().port;
+        await new Promise((resolve) => probe.close(resolve));
+        // The launcher's own --port comes first, so the fake binds it and ignores the gateway's --port 0.
+        const backend = createManagedBackend({ opencodePath: launcher('opencode-fixed-port', ['--port', String(reported)]), logger: silentLogger });
+        try {
+            await backend.start();
+            assert.equal(backend.getClient().baseUrl, `http://127.0.0.1:${reported}`);
+        } finally {
+            await backend.stop();
+        }
+    });
+
     it('fails clearly when the binary exits during startup', { timeout: 20000 }, async () => {
         const backend = createManagedBackend({ opencodePath: launcher('opencode-dies', ['--exit-immediately']), logger: silentLogger });
         await assert.rejects(backend.start(), /exited during startup/);
@@ -168,7 +205,7 @@ describe('isolation', () => {
         const dirs = createIsolatedRoot();
         try {
             for (const name of ['home', 'workspace', 'data', 'config', 'cache', 'state']) assert.ok(fs.statSync(dirs[name]).isDirectory());
-            assert.equal(fs.readFileSync(path.join(dirs.root, 'owner.pid'), 'utf8'), String(process.pid));
+            assert.match(fs.readFileSync(path.join(dirs.root, 'owner.pid'), 'utf8'), new RegExp(`^${process.pid}\\n[0-9a-f]{16}\\n(pid:\\[\\d+\\])?\\n$`));
             assert.ok(path.basename(dirs.root).startsWith('zengate-'));
         } finally {
             removeIsolatedRoot(dirs.root);
@@ -188,12 +225,109 @@ describe('isolation', () => {
         const live = createIsolatedRoot();
         try {
             fs.writeFileSync(path.join(stale.root, 'owner.pid'), String(await deadPid()));
-            assert.ok(sweepStaleRoots() >= 1);
+            assert.ok(await sweepStaleRoots() >= 1);
             assert.equal(fs.existsSync(stale.root), false);
             assert.ok(fs.existsSync(live.root), 'our own tree is kept');
         } finally {
             removeIsolatedRoot(stale.root);
             removeIsolatedRoot(live.root);
+        }
+    });
+
+    it('sweeps trees of an earlier process that had the same pid (container restarts)', async () => {
+        const earlier = createIsolatedRoot();
+        const legacy = createIsolatedRoot();
+        try {
+            fs.writeFileSync(path.join(earlier.root, 'owner.pid'), `${process.pid}\n0000000000000000\n`);
+            fs.writeFileSync(path.join(legacy.root, 'owner.pid'), String(process.pid));
+            assert.ok(await sweepStaleRoots() >= 2);
+            assert.equal(fs.existsSync(earlier.root), false);
+            assert.equal(fs.existsSync(legacy.root), false);
+        } finally {
+            removeIsolatedRoot(earlier.root);
+            removeIsolatedRoot(legacy.root);
+        }
+    });
+
+    describe('trees from another pid namespace', () => {
+        const OLD = new Date(Date.now() - 10 * 60 * 1000);
+        const foreignTree = ({ touched = new Date(), answers = true } = {}) => {
+            const dirs = createIsolatedRoot();
+            fs.writeFileSync(path.join(dirs.root, 'owner.pid'), `1\n0000000000000000\npid:[1]\n`);
+            fs.utimesSync(path.join(dirs.root, 'owner.pid'), touched, touched);
+            // An owner that is gone leaves a socket file nobody listens on, or none at all.
+            if (!answers) fs.rmSync(path.join(dirs.root, 'owner.sock'), { force: true });
+            return dirs;
+        };
+
+        it('keeps trees whose owner touched them recently', async () => {
+            const fresh = foreignTree({ answers: false });
+            try {
+                await sweepStaleRoots();
+                assert.ok(fs.existsSync(fresh.root));
+                fs.utimesSync(path.join(fresh.root, 'owner.pid'), OLD, OLD);
+                touchIsolatedRoot(fresh.root);
+                await sweepStaleRoots();
+                assert.ok(fs.existsSync(fresh.root), 'touching the tree keeps it alive');
+            } finally {
+                removeIsolatedRoot(fresh.root);
+            }
+        });
+
+        it('removes trees whose owner stopped touching them and does not answer', async () => {
+            const abandoned = foreignTree({ touched: OLD, answers: false });
+            try {
+                await sweepStaleRoots();
+                assert.equal(fs.existsSync(abandoned.root), false);
+            } finally {
+                removeIsolatedRoot(abandoned.root);
+            }
+        });
+
+        it('keeps the tree of an owner that is frozen but still answers', { skip: process.platform === 'win32' }, async () => {
+            const frozen = foreignTree({ touched: OLD });
+            try {
+                await sweepStaleRoots();
+                assert.ok(fs.existsSync(frozen.root));
+            } finally {
+                removeIsolatedRoot(frozen.root);
+            }
+        });
+
+        it('tells a stopped owner process from a dead one', { skip: process.platform !== 'linux' }, async () => {
+            const tree = foreignTree({ touched: OLD, answers: false });
+            const socketPath = path.join(tree.root, 'owner.sock');
+            const owner = spawn(process.execPath, ['-e', 'require("net").createServer((s) => s.destroy()).listen(process.argv[1])', socketPath], { stdio: 'ignore' });
+            const exited = new Promise((resolve) => owner.once('exit', resolve));
+            try {
+                await waitFor(() => fs.existsSync(socketPath));
+                owner.kill('SIGSTOP');
+                await sweepStaleRoots();
+                assert.ok(fs.existsSync(tree.root), 'a frozen owner keeps its tree');
+                owner.kill('SIGKILL');
+                await exited;
+                await sweepStaleRoots();
+                assert.equal(fs.existsSync(tree.root), false, 'a dead owner loses it');
+            } finally {
+                owner.kill('SIGKILL');
+                removeIsolatedRoot(tree.root);
+            }
+        });
+    });
+
+    it('stops the backend a dead gateway left running', { skip: process.platform !== 'linux' }, async () => {
+        const stale = createIsolatedRoot();
+        const orphan = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { cwd: stale.workspace, detached: true, stdio: 'ignore' });
+        const exited = new Promise((resolve) => orphan.once('exit', (code, signal) => resolve(signal)));
+        try {
+            recordBackendPid(stale.root, orphan.pid);
+            fs.writeFileSync(path.join(stale.root, 'owner.pid'), String(await deadPid()));
+            await sweepStaleRoots();
+            assert.equal(await exited, 'SIGKILL');
+            assert.equal(fs.existsSync(stale.root), false);
+        } finally {
+            orphan.kill('SIGKILL');
+            removeIsolatedRoot(stale.root);
         }
     });
 

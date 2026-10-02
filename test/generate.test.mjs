@@ -70,7 +70,9 @@ describe('generate', () => {
         assert.equal(result.content, 'abc ');
         assert.equal(texts.join(''), 'abc ');
         assert.equal(result.finish, 'stop');
-        assert.deepEqual(result.usage, ZERO, 'an aborted run reports no usage');
+        const { input, ...rest } = result.usage;
+        assert.deepEqual(rest, { output: 1, reasoning: 0, cacheRead: 0 }, 'a cut-off run estimates its output');
+        assert.ok(Number.isInteger(input) && input > 0, 'and its prompt');
         assert.equal(runner.calls[0].signal.aborted, true);
     });
 

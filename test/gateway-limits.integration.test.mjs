@@ -187,4 +187,15 @@ describe('gateway startup and shutdown', () => {
             await fake.close();
         }
     });
+
+    it('keeps answering /ready with 503 for a moment before it stops listening', async () => {
+        const stack = await startStack({ shutdownNoticeMs: 400 });
+        const ready = () => fetch(`${stack.base}/ready`).then(async (r) => ({ status: r.status, body: await r.json() }));
+        assert.equal((await ready()).status, 200);
+        const stopping = stack.stop();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        assert.deepEqual(await ready(), { status: 503, body: { status: 'stopping', backend: 'attached' } });
+        await stopping;
+        await assert.rejects(ready(), 'the listener is closed afterwards');
+    });
 });

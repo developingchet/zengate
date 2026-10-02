@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { escapeFrames } from './markup.js';
 
 /**
  * OpenAI function calling, emulated over a plain-text protocol.
@@ -49,11 +50,14 @@ export function toolInstructions(tools, choice, parallel) {
     return lines.join('\n');
 }
 
-/** Render a past call in the same syntax, so history teaches the protocol. */
+/**
+ * Render a past call in the same syntax, so history teaches the protocol.
+ * Its name and arguments come from the client, so frame tags are escaped.
+ */
 export function renderToolCall(call) {
     let args = call.arguments;
     try { args = JSON.parse(call.arguments); } catch { /* keep raw string */ }
-    return `${OPEN}${JSON.stringify({ name: call.name, arguments: args })}${CLOSE}`;
+    return `${OPEN}${escapeFrames(JSON.stringify({ name: call.name, arguments: args }))}${CLOSE}`;
 }
 
 /** Length of a trailing fragment that could still grow into an opening tag. */
@@ -162,6 +166,8 @@ export function createToolCallParser(tools) {
     let capturing = false;
 
     return {
+        /** True while a call block is open and its text is held back. */
+        get capturing() { return capturing; },
         push(text) {
             pending += text;
             if (capturing) return '';

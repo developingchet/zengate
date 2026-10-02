@@ -1,6 +1,8 @@
 import { ApiError } from '../server/errors.js';
 import { generate } from './generate.js';
+import { setIgnoredParams } from './ignored-params.js';
 import { buildPrompt } from './prompt.js';
+import { inlineRemoteAttachments } from './remote-media.js';
 import { createResponseBuilder } from './response-builder.js';
 import { parseResponsesRequest } from './responses-request.js';
 import { openSse } from './sse-writer.js';
@@ -21,9 +23,10 @@ export function responsesHandlers({ runner, catalog, store, limits }) {
         const model = await catalog.resolve(request.model);
         const prompt = buildPrompt(request, model);
         await assertPublicUrls(prompt.parts);
-        if (request.ignored.length) res.set('x-gateway-ignored-params', request.ignored.join(','));
+        setIgnoredParams(res, request.ignored);
 
         await req.withSlot(async (signal) => {
+            const ready = await inlineRemoteAttachments(prompt, { ...limits, signal });
             const sse = request.stream ? openSse(res) : null;
             const builder = createResponseBuilder({
                 model: model.id,
@@ -33,7 +36,7 @@ export function responsesHandlers({ runner, catalog, store, limits }) {
             builder.start();
             try {
                 const result = await generate({
-                    runner, prompt, request, signal,
+                    runner, prompt: ready, request, signal, onFirstToken: req.markFirstToken,
                     onText: (text) => builder.textDelta(text),
                     onReasoning: (text) => builder.reasoningDelta(text),
                 });

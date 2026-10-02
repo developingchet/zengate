@@ -1,5 +1,7 @@
 import { invalidRequest, unsupported } from '../server/errors.js';
 import { audioFromBase64, fileAttachment, imageFromUrl, videoFromUrl } from './media.js';
+import { parseMaxTokens } from './length-limit.js';
+import { escapeFileTags, fileBlock } from './markup.js';
 import { newCallId } from './tool-calls.js';
 
 /**
@@ -8,24 +10,29 @@ import { newCallId } from './tool-calls.js';
  * They are reported back in the `x-gateway-ignored-params` header.
  */
 const IGNORED = new Set([
-    'temperature', 'top_p', 'max_tokens', 'max_completion_tokens', 'presence_penalty', 'frequency_penalty',
+    'temperature', 'top_p', 'presence_penalty', 'frequency_penalty',
     'seed', 'logit_bias', 'user', 'metadata', 'store', 'service_tier', 'prompt_cache_key', 'prompt_cache_retention',
     'safety_identifier', 'verbosity', 'prediction', 'web_search_options', 'top_k', 'min_p', 'repetition_penalty',
 ]);
 const HANDLED = new Set([
     'model', 'messages', 'stream', 'stream_options', 'n', 'stop', 'response_format', 'reasoning_effort',
     'tools', 'tool_choice', 'parallel_tool_calls', 'functions', 'function_call', 'logprobs', 'top_logprobs',
-    'modalities', 'audio',
+    'modalities', 'audio', 'max_tokens', 'max_completion_tokens',
 ]);
 const ROLES = new Set(['system', 'developer', 'user', 'assistant', 'tool', 'function']);
 const MAX_MESSAGES = 2000;
 export const MAX_CHOICES = 4;
+/** OpenAI's own limit on functions in one request. */
+export const MAX_TOOLS = 128;
+/** Long enough for any real stop sequence; the stop filter rescans up to this much text. */
+const MAX_STOP_CHARS = 1000;
 
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 export function parseTools(tools, param = 'tools') {
     if (tools === undefined || tools === null) return [];
     if (!Array.isArray(tools)) throw invalidRequest('tools must be an array.', param);
+    if (tools.length > MAX_TOOLS) throw invalidRequest(`${param} may contain at most ${MAX_TOOLS} entries.`, param);
     const seen = new Set();
     return tools.map((tool, index) => {
         const fn = tool?.type === 'function' ? tool.function : tool?.type === undefined ? tool : null;
@@ -60,7 +67,7 @@ function textOf(parts, param) {
 }
 
 function parseUserContent(content, param, media) {
-    if (typeof content === 'string') return { text: content, media: [] };
+    if (typeof content === 'string') return { text: escapeFileTags(content), media: [] };
     if (content === null || content === undefined) return { text: '', media: [] };
     if (!Array.isArray(content)) throw invalidRequest('content must be a string or an array of content parts.', param);
     const texts = [];
@@ -69,18 +76,18 @@ function parseUserContent(content, param, media) {
         const where = `${param}[${index}]`;
         const options = { ...media, param: where };
         switch (part?.type) {
-            case 'text': texts.push(String(part.text ?? '')); break;
+            case 'text': texts.push(escapeFileTags(part.text)); break;
             case 'image_url': attachments.push(imageFromUrl(typeof part.image_url === 'string' ? part.image_url : part.image_url?.url, options)); break;
             case 'input_audio': attachments.push(audioFromBase64(part.input_audio?.data, part.input_audio?.format, options)); break;
             case 'file': attachments.push(fileAttachment(part.file || {}, options)); break;
             case 'video_url': attachments.push(videoFromUrl(typeof part.video_url === 'string' ? part.video_url : part.video_url?.url, options)); break;
-            case 'refusal': texts.push(String(part.refusal ?? '')); break;
+            case 'refusal': texts.push(escapeFileTags(part.refusal)); break;
             default:
                 throw unsupported(`Unsupported content part type '${part?.type}'. Use text, image_url, input_audio, file or video_url.`, where);
         }
     });
     const inlined = attachments.filter((a) => a.kind === 'text');
-    for (const file of inlined) texts.push(`\n<file name="${file.filename || 'attachment'}">\n${file.text}\n</file>\n`);
+    for (const file of inlined) texts.push(fileBlock(file.filename, file.text));
     return { text: texts.join(''), media: attachments.filter((a) => a.kind !== 'text') };
 }
 
@@ -139,10 +146,11 @@ export function parseResponseFormat(format, param = 'response_format') {
     throw invalidRequest('response_format.type must be text, json_object or json_schema.', param);
 }
 
-function parseStop(stop) {
+export function parseStop(stop) {
     if (stop === undefined || stop === null) return [];
     const list = Array.isArray(stop) ? stop : [stop];
     if (list.length > 4 || list.some((s) => typeof s !== 'string')) throw invalidRequest('stop must be a string or up to 4 strings.', 'stop');
+    if (list.some((s) => s.length > MAX_STOP_CHARS)) throw invalidRequest(`Each stop sequence may be at most ${MAX_STOP_CHARS} characters.`, 'stop');
     return list.filter(Boolean);
 }
 
@@ -176,6 +184,8 @@ export function parseChatRequest(body, media) {
         reasoningEffort: typeof body.reasoning_effort === 'string' ? body.reasoning_effort : null,
         stop: parseStop(body.stop),
         n,
+        maxTokens: parseMaxTokens(body, ['max_completion_tokens', 'max_tokens']),
+        limitsReasoning: body.max_completion_tokens !== undefined && body.max_completion_tokens !== null,
         stream: body.stream === true,
         includeUsage: body.stream_options?.include_usage === true,
         ignored,

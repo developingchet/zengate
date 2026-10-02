@@ -1,4 +1,7 @@
+import { clientKey } from './client-key.js';
 import { ApiError } from './errors.js';
+
+const busy = (message) => new ApiError(429, message, { code: 'server_busy', retryAfter: 2 });
 
 /**
  * Concurrency gate with a bounded FIFO queue.
@@ -7,10 +10,12 @@ import { ApiError } from './errors.js';
  * slots are free (a request with n choices runs n generations, so it costs
  * n slots). The slots are released exactly once: when the caller calls
  * release, or when `signal` aborts (timeout or client disconnect), so work
- * that ignores cancellation can never hold a slot forever.
- * @param {{ maxConcurrent: number, maxQueue: number }} options
+ * that ignores cancellation can never hold a slot forever. A request that
+ * waits longer than `queueTimeoutMs` gets a 429, well before a proxy in
+ * front would give up on a response that has not started.
+ * @param {{ maxConcurrent: number, maxQueue: number, queueTimeoutMs?: number }} options
  */
-export function createLimiter({ maxConcurrent, maxQueue }) {
+export function createLimiter({ maxConcurrent, maxQueue, queueTimeoutMs = 0 }) {
     let active = 0;
     const waiting = [];
 
@@ -30,7 +35,7 @@ export function createLimiter({ maxConcurrent, maxQueue }) {
             pump();
         };
         signal?.addEventListener('abort', release, { once: true });
-        return release;
+        return Object.assign(release, { weight });
     };
 
     const abortedError = () => new ApiError(499, 'Request cancelled.', { code: 'cancelled' });
@@ -42,24 +47,32 @@ export function createLimiter({ maxConcurrent, maxQueue }) {
             active += weight;
             return Promise.resolve(makeRelease(signal, weight));
         }
-        if (waiting.length >= maxQueue) {
-            return Promise.reject(new ApiError(429, 'Gateway is busy; retry shortly.', { code: 'server_busy', retryAfter: 2 }));
-        }
+        if (waiting.length >= maxQueue) return Promise.reject(busy('Gateway is busy; retry shortly.'));
         return new Promise((resolve, reject) => {
+            let timer = null;
             const entry = {
                 weight,
                 grant() {
+                    clearTimeout(timer);
                     signal?.removeEventListener('abort', onAbort);
                     active += weight;
                     resolve(makeRelease(signal, weight));
                 },
             };
-            const onAbort = () => {
+            const leave = (error) => {
+                clearTimeout(timer);
+                signal?.removeEventListener('abort', onAbort);
                 const index = waiting.indexOf(entry);
                 if (index >= 0) waiting.splice(index, 1);
-                reject(abortedError());
+                reject(error);
                 pump();
             };
+            const onAbort = () => leave(abortedError());
+            if (queueTimeoutMs > 0) {
+                const seconds = Math.round(queueTimeoutMs / 1000);
+                timer = setTimeout(() => leave(busy(`Gateway is busy; no slot freed up within ${seconds}s (QUEUE_TIMEOUT_MS).`)), queueTimeoutMs);
+                timer.unref();
+            }
             signal?.addEventListener('abort', onAbort, { once: true });
             waiting.push(entry);
         });
@@ -69,4 +82,45 @@ export function createLimiter({ maxConcurrent, maxQueue }) {
         acquire,
         stats: () => ({ active, queued: waiting.length, maxConcurrent, maxQueue }),
     });
+}
+
+/**
+ * Caps the requests that are reading a body, queued or running. Bodies are
+ * parsed before a request reaches the queue, so without this cap many large
+ * uploads at once could hold far more memory than MAX_QUEUE implies.
+ *
+ * One client address may have at most `perClientUploads` bodies still
+ * arriving, so a client that trickles its uploads cannot take every place.
+ * Ordinary JSON bodies arrive at once and barely count against it.
+ * @param {{ limit: number, perClientUploads?: number }} options
+ */
+export function admissionMiddleware({ limit, perClientUploads = Math.max(2, Math.ceil(limit / 4)) }) {
+    let admitted = 0;
+    const uploading = new Map();
+    const middleware = (req, res, next) => {
+        if (req.method !== 'POST') return next();
+        if (admitted >= limit) return next(busy('Gateway is busy; retry shortly.'));
+        const client = clientKey(req);
+        const inProgress = uploading.get(client) || 0;
+        if (inProgress >= perClientUploads) return next(busy('Too many uploads in progress from this client; retry shortly.'));
+        admitted += 1;
+        uploading.set(client, inProgress + 1);
+        let arrived = false;
+        const bodyArrived = () => {
+            if (arrived) return;
+            arrived = true;
+            const left = uploading.get(client) - 1;
+            if (left > 0) uploading.set(client, left);
+            else uploading.delete(client);
+        };
+        if (req.readableEnded) bodyArrived();
+        else req.once('end', bodyArrived);
+        res.once('close', () => {
+            admitted -= 1;
+            bodyArrived();
+        });
+        return next();
+    };
+    middleware.count = () => admitted;
+    return middleware;
 }

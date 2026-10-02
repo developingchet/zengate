@@ -385,6 +385,7 @@ describe('event hub', () => {
         send({ type: 'session.created', properties: { info: { id: 'child', parentID: 'parent' } } });
         send({ type: 'session.updated', properties: { info: { id: 'child', parentID: 'parent' } } });
         send({ type: 'session.created', properties: { info: { id: 'grandchild', parentID: 'child' } } });
+        send({ type: 'session.created', properties: { info: { id: 'great-grandchild', parentID: 'grandchild' } } });
         send({ type: 'session.created', properties: { info: { id: 'stranger', parentID: 'foreign' } } });
         send({ type: 'session.created', properties: { info: { id: 'orphan' } } });
         send({ type: 'session.created', properties: {} });
@@ -397,10 +398,12 @@ describe('event hub', () => {
 
         hub.release('parent');
         send({ type: 'permission.asked', properties: { id: 'p_child_after', sessionID: 'child' } });
+        send({ type: 'permission.asked', properties: { id: 'p_great_after', sessionID: 'great-grandchild' } });
         hub.subscribe('marker', () => {});
         send({ type: 'permission.asked', properties: { id: 'p_marker', sessionID: 'marker' } });
         await waitFor(() => log.replies.some((r) => r.id === 'p_marker'));
         assert.equal(log.replies.some((r) => r.id === 'p_child_after'), false, 'children are released with their parent');
+        assert.equal(log.replies.some((r) => r.id === 'p_great_after'), false, 'and so are their own descendants');
     });
 
     it('rejects every session in managed mode and sweeps pending requests on connect', async (t) => {

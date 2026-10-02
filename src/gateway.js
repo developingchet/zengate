@@ -6,7 +6,11 @@ import { createResponsesStore } from './openai/responses-store.js';
 import { createApp } from './server/app.js';
 
 const HUB_CONNECT_TIMEOUT_MS = 10000;
-const DRAIN_TIMEOUT_MS = 10000;
+const MB = 1024 * 1024;
+// Time allowed to receive a whole request (headers and body). Generation
+// time is not included; REQUEST_TIMEOUT_MS bounds that.
+const BODY_TIMEOUT_MS = 120000;
+const SHUTDOWN_NOTICE_MS = 2000;
 
 export function createBackend(config, logger) {
     return config.OPENCODE_SERVER_URL
@@ -29,9 +33,25 @@ function listen(app, { PORT, HOST }) {
     });
 }
 
-function drain(server) {
+const openConnections = (server) => new Promise((resolve) => {
+    server.getConnections((error, count) => resolve(error ? 0 : count));
+});
+
+/**
+ * Keep listening for `noticeMs` while /ready reports "stopping", so a load
+ * balancer that polls it stops routing here before the listener closes.
+ * Skipped when nobody is connected, so a local Ctrl+C stays instant.
+ * @returns {Promise<number>} how long it waited
+ */
+async function announceShutdown(server, noticeMs) {
+    if (noticeMs <= 0 || (await openConnections(server)) === 0) return 0;
+    await new Promise((resolve) => setTimeout(resolve, noticeMs));
+    return noticeMs;
+}
+
+function drain(server, timeoutMs) {
     return new Promise((resolve) => {
-        const force = setTimeout(() => server.closeAllConnections(), DRAIN_TIMEOUT_MS);
+        const force = setTimeout(() => server.closeAllConnections(), timeoutMs);
         force.unref();
         server.close(() => { clearTimeout(force); resolve(); });
         server.closeIdleConnections();
@@ -42,15 +62,15 @@ function drain(server) {
  * Wires the OpenCode backend, event hub, catalog and HTTP app together and
  * starts listening.
  * @param {object} config validated config from loadConfig
- * @param {{ logger: object, backend?: object }} deps backend is injectable for tests
+ * @param {{ logger: object, backend?: object, shutdownNoticeMs?: number }} deps backend and notice are injectable for tests
  */
-export async function startGateway(config, { logger, backend = createBackend(config, logger) }) {
+export async function startGateway(config, { logger, backend = createBackend(config, logger), shutdownNoticeMs = SHUTDOWN_NOTICE_MS }) {
     const getClient = () => backend.getClient();
     const hub = createEventHub({ getClient, logger, ownsAllSessions: backend.ownsAllSessions });
     const catalog = createCatalog({ getClient, logger });
     const runner = createRunner({ getClient, hub, logger, agent: config.OPENCODE_AGENT });
-    const store = createResponsesStore({ maxEntries: config.RESPONSES_STORE_MAX });
-    const { app, close: closeApp } = createApp({ config, logger, backend, hub, catalog, runner, store });
+    const store = createResponsesStore({ maxEntries: config.RESPONSES_STORE_MAX, maxChars: config.RESPONSES_STORE_MB * MB });
+    const { app, close: closeApp, startDraining } = createApp({ config, logger, backend, hub, catalog, runner, store });
 
     await backend.start();
     let server;
@@ -70,15 +90,17 @@ export async function startGateway(config, { logger, backend = createBackend(con
         await backend.stop();
         throw error;
     }
-    // Generations can legitimately run for minutes; REQUEST_TIMEOUT_MS bounds them instead.
-    server.requestTimeout = 0;
+    server.requestTimeout = BODY_TIMEOUT_MS;
     server.headersTimeout = 30000;
     server.keepAliveTimeout = 65000;
 
     let stopping = null;
     const stop = () => {
         stopping ??= (async () => {
-            await drain(server);
+            startDraining();
+            // In-flight requests keep running during the notice, so it counts towards SHUTDOWN_TIMEOUT_MS.
+            const noticed = await announceShutdown(server, Math.min(shutdownNoticeMs, config.SHUTDOWN_TIMEOUT_MS / 2));
+            await drain(server, config.SHUTDOWN_TIMEOUT_MS - noticed);
             closeApp();
             await hub.stop();
             await backend.stop();

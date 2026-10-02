@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import net from 'node:net';
+import { clientKey } from './client-key.js';
 import { ApiError, sendError } from './errors.js';
 
 const PUBLIC_PATHS = new Set(['/health', '/ready']);
@@ -63,7 +65,7 @@ export function rateLimitMiddleware({ perMinute, onLimited, maxClients = 50000 }
 
     const middleware = (req, res, next) => {
         if (perMinute <= 0 || PUBLIC_PATHS.has(req.path)) return next();
-        const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+        const ip = clientKey(req);
         const now = Date.now();
         let bucket = buckets.get(ip);
         if (!bucket) {
@@ -83,6 +85,33 @@ export function rateLimitMiddleware({ perMinute, onLimited, maxClients = 50000 }
     };
     middleware.close = () => clearInterval(sweep);
     return middleware;
+}
+
+/** The name in a Host header, lower-cased, without port, brackets or a trailing dot. */
+function hostName(header) {
+    const value = String(header || '').trim().toLowerCase();
+    if (value.startsWith('[')) return value.slice(1, value.indexOf(']'));
+    return value.replace(/:\d*$/, '').replace(/\.$/, '');
+}
+
+/**
+ * Without API keys, a web page could use the gateway through DNS rebinding:
+ * its own domain is made to resolve to this host, so the browser treats the
+ * gateway as same-origin. Such requests carry that domain as Host, so only
+ * names that cannot be rebound are accepted: IP addresses, localhost and its
+ * subdomains, and ALLOWED_HOSTS.
+ * @param {{ allowedHosts: string[] }} options
+ */
+export function hostGuard({ allowedHosts }) {
+    const allowed = new Set(['localhost', ...allowedHosts.map((host) => hostName(host))]);
+    return (req, res, next) => {
+        if (PUBLIC_PATHS.has(req.path)) return next();
+        const host = hostName(req.headers.host);
+        if (host && (allowed.has(host) || host.endsWith('.localhost') || net.isIP(host))) return next();
+        return sendError(res, new ApiError(403,
+            'This Host name is not accepted while ALLOW_NO_AUTH is on. Use an IP address or localhost, or add the name to ALLOWED_HOSTS.',
+            { code: 'host_not_allowed' }));
+    };
 }
 
 export function securityHeaders(req, res, next) {

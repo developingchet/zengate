@@ -3,21 +3,37 @@ const MAX_ENTRY_CHARS = 4 * 1024 * 1024;
 
 /**
  * In-memory store behind previous_response_id and GET/DELETE
- * /v1/responses/{id}. Bounded (LRU + 1h TTL) and never persisted: a gateway
- * restart forgets stored responses, which clients see as "not found".
- * @param {{ maxEntries: number }} options
+ * /v1/responses/{id}. Bounded by entry count, by an approximate memory budget
+ * (JSON size of each entry's full history, so chained turns that share
+ * messages are counted conservatively) and by a 1h TTL, evicting least
+ * recently used entries first. Never persisted: a gateway restart forgets
+ * stored responses, which clients see as "not found".
+ * @param {{ maxEntries: number, maxChars?: number }} options
  */
-export function createResponsesStore({ maxEntries }) {
+export function createResponsesStore({ maxEntries, maxChars = Infinity }) {
     const entries = new Map();
     const items = new Map();
+    // Chained turns reuse the same message objects, so each is sized once.
+    const messageSizes = new WeakMap();
+    let chars = 0;
 
     const expired = (entry) => Date.now() - entry.at > TTL_MS;
+
+    const messageSize = (message) => {
+        let size = messageSizes.get(message);
+        if (size === undefined) {
+            size = JSON.stringify(message).length;
+            messageSizes.set(message, size);
+        }
+        return size;
+    };
 
     function evict(id) {
         const entry = entries.get(id);
         if (!entry) return;
         for (const itemId of entry.itemIds) items.delete(itemId);
         entries.delete(id);
+        chars -= entry.size;
     }
 
     function get(id) {
@@ -50,11 +66,14 @@ export function createResponsesStore({ maxEntries }) {
              */
             save(response, history) {
                 if (maxEntries <= 0) return;
-                if (JSON.stringify(history).length > MAX_ENTRY_CHARS) return;
+                const size = history.reduce((sum, message) => sum + messageSize(message), JSON.stringify(response).length);
+                if (size > Math.min(MAX_ENTRY_CHARS, maxChars)) return;
+                evict(response.id);
                 const itemIds = response.output.map((item) => item.id);
                 for (const item of response.output) items.set(item.id, { item, responseId: response.id });
-                entries.set(response.id, { response, history, itemIds, owner, at: Date.now() });
-                while (entries.size > maxEntries) evict(entries.keys().next().value);
+                entries.set(response.id, { response, history, itemIds, owner, at: Date.now(), size });
+                chars += size;
+                while (entries.size > maxEntries || chars > maxChars) evict(entries.keys().next().value);
             },
             response: (id) => owned(id, owner)?.response ?? null,
             history: (id) => owned(id, owner)?.history ?? null,
@@ -74,5 +93,6 @@ export function createResponsesStore({ maxEntries }) {
         enabled: maxEntries > 0,
         scope,
         size: () => entries.size,
+        chars: () => chars,
     });
 }

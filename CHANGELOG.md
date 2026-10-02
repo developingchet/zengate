@@ -4,8 +4,43 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- `QUEUE_TIMEOUT_MS` (default 30s): a request that cannot get a slot in time gets `429 server_busy` instead of waiting silently until a proxy gives up. `REQUEST_TIMEOUT_MS` now starts once the request has a slot.
+- `SHUTDOWN_TIMEOUT_MS` (default 10s) sets how long a shutdown waits for in-flight requests, and `/ready` answers `503` with `"status": "stopping"` as soon as shutdown begins.
+- `RESPONSES_STORE_MB` (default 256) caps the approximate memory of stored responses, on top of the `RESPONSES_STORE_MAX` entry count.
+- An access-log line for each API request (method, path, status, duration, client), at `info` level.
+- A clear error on Node.js versions older than 24.
+- `max_tokens`, `max_completion_tokens` and `max_output_tokens` are honoured approximately (about four characters per token): the answer is cut there, the model is stopped and the finish reason is `length` (`incomplete` in Responses). `max_completion_tokens` and `max_output_tokens` include reasoning, as in OpenAI's API. Usage for a cut answer is estimated, with the prompt side based on what OpenCode last measured for the model.
+- `POST /v1/completions` for clients that still use the legacy completions API. `POST /v1/embeddings` returns a clear `404 unsupported_endpoint`.
+- `/metrics` serves the Prometheus text format for `?format=prometheus` or an `Accept: text/plain` scrape, and reports request latency, time to first token and rejected tool calls.
+
 ### Changed
 - The Socket scan runs on pull requests and pushes to `main` only, no longer weekly. Dependabot alerts and the weekly CI audit already report new advisories in the lockfile.
+- `opencode-ai` is pinned to an exact version, so `npm install -g` and `npx` get the OpenCode release the gateway was tested with.
+- `/ready` no longer reports the OpenCode version; `/metrics` (which needs the key) does.
+- Earlier assistant messages of a turn are fetched from OpenCode in parallel.
+- On shutdown the gateway keeps answering `/ready` with `503` for up to 2 seconds before it stops listening, so load balancers stop routing to it first. The wait counts towards `SHUTDOWN_TIMEOUT_MS` and is skipped when no client is connected.
+
+### Fixed
+- If restarting a crashed OpenCode backend failed before the process started (for example, the binary was briefly missing), the gateway stopped retrying and stayed unavailable. It now keeps retrying with backoff.
+- Backend scratch directories left by a killed container were never removed, because the restarted gateway had the same pid. A gateway killed outright no longer leaves its OpenCode process running on Linux; the next start stops it.
+- Two gateways sharing one `/tmp` (for example containers with a shared volume) no longer delete each other's scratch directories because their pids collide. Each gateway holds a Unix socket in its directory, and a directory from another pid namespace is removed only when its owner no longer answers there and has not refreshed it for two minutes, so a paused container keeps its directory.
+- With `n` above `MAX_CONCURRENT`, all choices ran at once although the request held only `MAX_CONCURRENT` slots. They now take turns within the slots held. When one choice fails, the others are stopped instead of running on without a slot.
+- A request with a non-ASCII parameter name (for example `"€"`) failed with `500`, because the name was copied into the `x-gateway-ignored-params` header. The header now lists at most 32 short, header-safe names.
+- Request bodies are read under a 120-second deadline, so a client can no longer hold a connection open by sending its body very slowly.
+
+### Security
+- OpenCode now picks its own port and the gateway connects to the port it reports. The gateway used to find a free port, release it and start OpenCode on it, so another local process could take the port in between and pose as the backend, receiving every prompt.
+- With `ALLOW_NO_AUTH`, requests whose Host is a name other than `localhost` or one in the new `ALLOWED_HOSTS` setting are refused with `403`, so a web page cannot reach the gateway through DNS rebinding.
+- Rate limits and the per-client upload cap count an IPv6 client by its /64 network, since one client can pick any address in it.
+- Stop sequences are limited to 1,000 characters and requests to 128 tools, and message text can no longer pose as an attached file.
+- The config file's temporary copy is created fresh and never written through an existing file or symlink.
+- The gateway downloads `https` attachments itself and gives OpenCode the content, instead of letting OpenCode fetch the URL. Every connection, including each redirect, goes only to the address that passed the public-address check, so redirects and DNS rebinding cannot reach internal hosts, and remote files are held to `MAX_MEDIA_MB` and `MAX_BODY_MB`.
+- The address check also refuses IPv4-mapped and IPv4-translated IPv6 in every notation, IPv4-compatible, 6to4, Teredo and other special-purpose IPv6 ranges, while NAT64 addresses are judged by the IPv4 address they carry.
+- Message text, file names, tool names and call ids are escaped in the conversation transcript, so a message cannot pose as another turn, a tool result or a function call.
+- Requests that are uploading, queued or running are capped at `MAX_CONCURRENT + MAX_QUEUE`, so concurrent large uploads can no longer hold unbounded memory before reaching the queue. One client address may be uploading at most a quarter of that at once, so a client that sends its bodies slowly cannot take every place.
+- Attachment URLs appear in error messages and logs without their query string or credentials, which keeps signed-URL tokens out of logs.
+- The systemd unit adds `ProtectProc=invisible`, `ProtectClock`, `ProtectHostname`, `ProtectKernelLogs`, `RestrictRealtime` and a `SystemCallFilter=@system-service` system-call filter. The Compose examples drop all capabilities, set `no-new-privileges` and run with a read-only root filesystem.
 
 ## [1.0.4] - 2026-09-27
 

@@ -30,6 +30,11 @@ services:
       - "127.0.0.1:8083:8083"
     volumes:
       - zengate:/data
+    stop_grace_period: 20s
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: [/tmp]
 volumes:
   zengate:
 ```
@@ -53,6 +58,7 @@ The full list is in the [README](https://github.com/developingchet/zengate#confi
 - Platforms: `linux/amd64`, `linux/arm64`.
 - Tags: `latest`, `1`, `1.2`, `1.2.3` (pre-releases only get their exact version tag).
 - Runs as the unprivileged `node` user, listens on port `8083`, and has a built-in health check on `/ready`.
+- Works with a read-only root filesystem: only `/tmp` and `/data` need to be writable.
 - The gateway's own traffic is plain HTTP. Publish the port on `127.0.0.1`, or put a TLS reverse proxy in front.
 
 ## Supply chain

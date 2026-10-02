@@ -36,7 +36,8 @@ OpenCode's free Zen models only work from inside OpenCode. So this gateway does 
 Trade-offs to know about:
 
 - **Prompt overhead.** Each request carries OpenCode's system prompt and tool list (roughly 6–9k input tokens, largely cache hits), and adds about 1–3 s of latency.
-- **Sampling parameters are ignored.** Settings like `temperature` and `max_tokens` cannot be forwarded through OpenCode. The gateway accepts them and lists them in an `x-gateway-ignored-params` response header.
+- **Sampling parameters are ignored.** Settings like `temperature` and `top_p` cannot be forwarded through OpenCode. The gateway accepts them and lists them in an `x-gateway-ignored-params` response header.
+- **`max_tokens` is approximate.** OpenCode has no output limit either, so the gateway counts about four characters as a token, cuts the answer there, stops the model and reports `finish_reason: "length"`. As in OpenAI's API, `max_completion_tokens` and `max_output_tokens` include reasoning text and `max_tokens` covers only the answer. Usage for a cut answer is estimated, because OpenCode reports none for a stopped turn.
 - **Upstream terms apply.** Availability, rate limits and the model list are set by OpenCode Zen and can change at any time. Free models may have their own data policies; see the [Zen docs](https://opencode.ai/docs/zen/).
 
 > **Fair use.** zengate talks to Zen only through the official OpenCode CLI and never bypasses its limits or free-tier checks. You are responsible for following OpenCode's terms and fair-use expectations. Run it for yourself or your team, not as a public or resold service.
@@ -78,6 +79,13 @@ services:
       - "127.0.0.1:8083:8083"
     volumes:
       - zengate:/data
+    # Longer than SHUTDOWN_TIMEOUT_MS plus 5s, so in-flight requests can finish.
+    stop_grace_period: 20s
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # OpenCode writes only to /tmp and the gateway only to /data.
+    read_only: true
+    tmpfs: [/tmp]
 volumes:
   zengate:
 ```
@@ -182,10 +190,12 @@ curl http://127.0.0.1:8083/v1/chat/completions \
 |---|---|
 | `POST /v1/chat/completions` | Streaming (SSE, `stream_options.include_usage`), `n` 1–4, `stop`, `tools` / `tool_choice` / `parallel_tool_calls`, legacy `functions`, `response_format` (`json_object`, `json_schema`), `reasoning_effort`, `developer` / `system` / `tool` roles, `reasoning_content` in responses |
 | `POST /v1/responses` | Streaming with the standard event sequence, `instructions`, `previous_response_id`, `item_reference`, `function` and `custom` tools, `text.format`, `reasoning.effort` / `reasoning` summary items, `store` |
-| `GET` / `DELETE /v1/responses/{id}` | Stored in memory for 1 hour, up to `RESPONSES_STORE_MAX` entries |
+| `GET` / `DELETE /v1/responses/{id}` | Stored in memory for 1 hour, within `RESPONSES_STORE_MAX` entries and `RESPONSES_STORE_MB` |
 | `GET /v1/models`, `GET /v1/models/{id}` | Live list from OpenCode |
-| `GET /health`, `GET /ready` | Public liveness and readiness probes |
-| `GET /metrics` | Request counters and slot usage, as JSON (needs the key) |
+| `GET /health`, `GET /ready` | Public liveness and readiness probes (`/ready` answers `503` while starting or shutting down) |
+| `POST /v1/completions` | Legacy text completions: `prompt` as a string or list of strings, `n`, `stop`, `max_tokens`, `echo`, streaming. The model is asked to continue the text, so it behaves like a chat model, not a base model. Without `max_tokens` the length is not limited (OpenAI defaults to 16) |
+| `POST /v1/embeddings` | `404 unsupported_endpoint`: Zen serves chat models only |
+| `GET /metrics` | Request counters, latency and time-to-first-token, slot usage and the OpenCode version (needs the key). JSON by default; Prometheus text format for `?format=prometheus` or an `Accept: text/plain` scrape |
 
 Routes also work without the `/v1` prefix. Errors use the standard OpenAI envelope, `{"error": {"message", "type", "param", "code"}}`, with matching HTTP status codes (400, 401, 404, 413, 429 with `Retry-After`, 502, 503, 504).
 
@@ -201,9 +211,11 @@ Routes also work without the `/v1` prefix. Errors use the standard OpenAI envelo
 
 Text files (plain text, markdown, JSON, CSV and so on) are inlined as text, so every model can read them.
 
+The gateway downloads `https` attachment URLs itself (at most 16 in one request, 30 seconds each, up to 3 redirects) and passes the content on, so remote files obey `MAX_MEDIA_MB` and `MAX_BODY_MB` like inline ones. The server's `Content-Type` must match the part: an `image_url` must return an image. This direct connection does not use `HTTPS_PROXY`.
+
 **Function calling** is emulated. OpenCode sessions cannot register your functions natively, so their schemas go into the prompt and the model's calls come back as standard `tool_calls` or `function_call` items. It works reliably with `big-pickle`. If a model tries to call a function the wrong way, or ignores `tool_choice: "required"`, the gateway retries once with a correction.
 
-**Not supported** (clear 400 error): `logprobs`, audio output, `file_id` references (there is no Files API), `background` responses, the Conversations API and stored prompts. Hosted tools such as `web_search` in Responses are ignored and listed in `x-gateway-ignored-params`.
+**Not supported** (clear 400 error): `logprobs`, `suffix`, audio output, `file_id` references (there is no Files API), `background` responses, the Conversations API and stored prompts. Hosted tools such as `web_search` in Responses are ignored and listed in `x-gateway-ignored-params`.
 
 ## Configuration
 
@@ -212,13 +224,16 @@ Set values as environment variables or in the config file (same names; see [`con
 | Setting | Default | Meaning |
 |---|---|---|
 | `API_KEY` / `API_KEYS` | generated | Gateway key(s), at least 16 characters. `API_KEYS` takes a list for rotation. |
-| `ALLOW_NO_AUTH` | `false` | Serve without any key (explicit opt-out). |
+| `ALLOW_NO_AUTH` | `false` | Serve without any key (explicit opt-out). Requests must then use an IP address, `localhost` or a name in `ALLOWED_HOSTS` as their Host, which stops web pages from reaching the gateway through DNS rebinding. |
+| `ALLOWED_HOSTS` | none | Extra Host names accepted while `ALLOW_NO_AUTH` is on, such as the name a reverse proxy forwards. |
 | `HOST` / `PORT` | `127.0.0.1` / `8083` | Listen address. |
 | `MAX_CONCURRENT` / `MAX_QUEUE` | `8` / `32` | Parallel generations, and how many requests may wait (then `429`). |
+| `QUEUE_TIMEOUT_MS` | `30000` | How long a request may wait for a slot (then `429`). Keep it below your proxy's response timeout. |
 | `RATE_LIMIT_PER_MINUTE` | `120` | Per client IP (`0` turns it off). |
-| `REQUEST_TIMEOUT_MS` | `300000` | Per generation (then `504`). |
+| `REQUEST_TIMEOUT_MS` | `300000` | Per generation, counted from when it gets a slot (then `504`). |
+| `SHUTDOWN_TIMEOUT_MS` | `10000` | How long a shutdown waits for in-flight requests. Give Docker or systemd at least 5 seconds more. |
 | `MAX_BODY_MB` / `MAX_MEDIA_MB` | `25` / `20` | Request body limit, and the limit per attachment. |
-| `RESPONSES_STORE_MAX` | `500` | Stored responses for `previous_response_id` (`0` turns storage off). |
+| `RESPONSES_STORE_MAX` / `RESPONSES_STORE_MB` | `500` / `256` | Stored responses for `previous_response_id`, by count and approximate memory (`RESPONSES_STORE_MAX=0` turns storage off). |
 | `CORS_ORIGINS` | none | Browser origins allowed to call the API (explicit list; `*` is refused). |
 | `TRUST_PROXY` | `0` | Number of reverse-proxy hops to trust for client IPs. |
 | `LOG_LEVEL` / `LOG_JSON` | `info` / `false` | Log verbosity, and JSON-lines output. |
@@ -233,9 +248,9 @@ Set values as environment variables or in the config file (same names; see [`con
 
 ## Deployment
 
-**Docker.** The key persists in the `/data` volume. You can pass `-e API_KEY=...` instead. Publish the port on `127.0.0.1`, or put a TLS reverse proxy in front before exposing it to a network.
+**Docker.** The key persists in the `/data` volume. You can pass `-e API_KEY=...` instead. Publish the port on `127.0.0.1`, or put a TLS reverse proxy in front before exposing it to a network. `docker stop` waits only 10 seconds before killing the container, so pass `--stop-timeout 20` (or `stop_grace_period` in Compose) to let in-flight requests finish. The container also runs with a read-only root (`--read-only --tmpfs /tmp`), `--cap-drop ALL` and `--security-opt no-new-privileges:true`. On shutdown, `/ready` answers `503` for up to 2 seconds before the listener closes, so a load balancer polling it stops sending traffic first.
 
-**systemd.** See [`deploy/zengate.service`](deploy/zengate.service). It runs as an unprivileged user with a hardened sandbox, and the key goes in `/var/lib/zengate/config.json`.
+**systemd.** See [`deploy/zengate.service`](deploy/zengate.service). It runs as an unprivileged user with a hardened sandbox and a system-call filter (`@system-service`), and the key goes in `/var/lib/zengate/config.json`.
 
 **Behind a reverse proxy.** Set `TRUST_PROXY=1` (or however many hops you have) so rate limits apply per real client. Disable response buffering for streaming. The gateway already sends `X-Accel-Buffering: no` for nginx.
 
@@ -263,8 +278,9 @@ sha256sum -c checksums.txt
 - The API key is required unless you set `ALLOW_NO_AUTH`. Keys are compared in constant time, the config file is written with mode `0600`, and keys are never logged.
 - The gateway binds to loopback by default and warns when it listens elsewhere, because traffic is plain HTTP, so put TLS in front.
 - OpenCode tools are never executed, and OpenCode runs isolated from your home directory and configuration.
-- Attachment URLs must be `https` and resolve to public addresses. Loopback, private, link-local and similar ranges are refused, which blocks SSRF into your network.
-- Rate limiting, a bounded queue, body and attachment size limits, and per-request timeouts all apply. A request with `n` choices uses `n` concurrency slots, and slots are always released on disconnect or timeout.
+- Attachment URLs must be `https` and resolve to public addresses. Loopback, private, link-local and similar ranges (including IPv6 forms that embed them) are refused, which blocks SSRF into your network. The gateway fetches them itself and connects only to the address it checked, including on every redirect, so DNS rebinding cannot reach an internal host. OpenCode never sees the URL.
+- Conversation history is sent to the model as a tagged transcript. Message text, file names and tool names are escaped so they cannot fake another turn, a tool result or a function call.
+- Rate limiting, a bounded queue with a wait limit, body and attachment size limits, and per-request timeouts all apply. Requests that are uploading, queued or running are capped at `MAX_CONCURRENT + MAX_QUEUE`, which bounds the memory held by request bodies, and one client address may be uploading at most a quarter of that at once. Attachment URLs appear in errors and logs without their query string or credentials. A request with `n` choices uses `n` concurrency slots, and slots are always released on disconnect or timeout.
 - Stored responses (`previous_response_id`, `GET /v1/responses/{id}`) are visible only to the API key that created them.
 - The gateway sends no telemetry and never logs request bodies. OpenCode's auto-update and session sharing are disabled.
 
@@ -277,7 +293,8 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 | `401 invalid_api_key` | Send `Authorization: Bearer <key from the config file>`. |
 | `404 model_not_found` | Use an id from `GET /v1/models`. The free model list changes over time. |
 | `400 unsupported_modality` | That model can't take this input kind. Pick one that does. |
-| `429 server_busy` / `rate_limit_exceeded` | Raise `MAX_CONCURRENT` / `MAX_QUEUE` / `RATE_LIMIT_PER_MINUTE`, or slow down. |
+| `429 server_busy` / `rate_limit_exceeded` | Raise `MAX_CONCURRENT` / `MAX_QUEUE` / `QUEUE_TIMEOUT_MS` / `RATE_LIMIT_PER_MINUTE`, or slow down. |
+| `400 invalid_attachment_url` | The attachment URL is not public, failed to download, or returned the wrong type. Send it as a base64 data URI instead. |
 | `429 upstream_rate_limited`, `502 upstream_*` | OpenCode Zen is limiting or failing. Retry later or try another model. |
 | `503 backend_unavailable` | OpenCode is still starting or restarting. Check `GET /ready`. Run with `LOG_LEVEL=debug` to see OpenCode's own logs. |
 | Startup: `Port ... in use` | Another process has the port. Set `PORT`. |

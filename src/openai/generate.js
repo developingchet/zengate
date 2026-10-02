@@ -1,7 +1,10 @@
+import { CHARS_PER_TOKEN, createLengthLimit } from './length-limit.js';
 import { createStopFilter } from './stop.js';
 import { createToolCallParser } from './tool-calls.js';
+import { estimateUsage, learnPromptOverhead, NO_USAGE } from './usage-estimate.js';
 
 const STOP_REACHED = Symbol('stop-sequence');
+const LENGTH_REACHED = Symbol('max-tokens');
 const SEPARATOR = '\n\n';
 
 const FORCED_RETRY_NOTE = 'To call a function, write a <tool_call>{"name": ..., "arguments": {...}}</tool_call> block as plain text in your reply. Do not describe the call; write the block.';
@@ -10,19 +13,20 @@ const addUsage = (a, b) => ({ input: a.input + b.input, output: a.output + b.out
 
 /**
  * Run one completion through OpenCode and apply the OpenAI-side semantics:
- * stop sequences, emulated function calls and structured output.
+ * stop sequences, max_tokens, emulated function calls and structured output.
  *
- * @param {{ runner: object, prompt: object, request: object, signal: AbortSignal,
+ * @param {{ runner: object, prompt: object, request: object, signal: AbortSignal, maxChars: number,
  *           onText?: (text: string) => void, onReasoning?: (text: string) => void }} options
  * @returns {Promise<{ content: string, reasoning: string, toolCalls: object[], finish: string, usage: object }>}
  */
-async function attempt({ runner, prompt, request, signal, onText, onReasoning }) {
+async function attempt({ runner, prompt, request, signal, maxChars, onText, onReasoning }) {
     const controller = new AbortController();
     const forward = () => controller.abort(signal.reason);
     if (signal.aborted) forward();
     else signal.addEventListener('abort', forward, { once: true });
 
     const stopFilter = createStopFilter(request.stop);
+    const lengthLimit = createLengthLimit(maxChars);
     const parser = request.tools.length && request.toolChoice !== 'none' ? createToolCallParser(request.tools) : null;
     // With native structured output, OpenCode returns the JSON separately
     // (info.structured) and any streamed text may be prose, so hold it back.
@@ -36,10 +40,25 @@ async function attempt({ runner, prompt, request, signal, onText, onReasoning })
         content += text;
         onText(text);
     };
-    const acceptText = (text) => {
-        const allowed = stopFilter.push(text);
+    const accept = (text) => {
+        const allowed = lengthLimit.push(text);
         emitText(parser ? parser.push(allowed) : allowed);
-        if (stopFilter.stopped && !controller.signal.aborted) controller.abort(STOP_REACHED);
+    };
+    const acceptText = (text) => {
+        accept(stopFilter.push(text));
+        if (controller.signal.aborted) return;
+        if (stopFilter.stopped) controller.abort(STOP_REACHED);
+        else if (lengthLimit.reached) controller.abort(LENGTH_REACHED);
+    };
+    const done = () => stopFilter.stopped || lengthLimit.reached;
+    // max_completion_tokens and max_output_tokens include reasoning, as in OpenAI's API; max_tokens does not.
+    const acceptReasoning = (text) => {
+        const allowed = request.limitsReasoning ? lengthLimit.push(text) : text;
+        if (allowed) {
+            reasoning += allowed;
+            onReasoning(allowed);
+        }
+        if (lengthLimit.reached && !controller.signal.aborted) controller.abort(LENGTH_REACHED);
     };
 
     let result = null;
@@ -48,44 +67,48 @@ async function attempt({ runner, prompt, request, signal, onText, onReasoning })
             signal: controller.signal,
             onDelta(kind, text) {
                 if (kind === 'reasoning') {
-                    reasoning += text;
-                    onReasoning(text);
+                    if (!done()) acceptReasoning(text);
                 } else if (nativeFormat) {
                     held += text;
-                } else if (!stopFilter.stopped) {
+                } else if (!done()) {
                     acceptText(text);
                 }
             },
         });
     } catch (error) {
-        if (controller.signal.reason !== STOP_REACHED) throw error;
+        const reason = controller.signal.reason;
+        if (reason !== STOP_REACHED && reason !== LENGTH_REACHED) throw error;
     } finally {
         signal.removeEventListener('abort', forward);
     }
+    if (result?.usage) learnPromptOverhead(prompt, result.usage);
 
     if (result?.structured !== undefined) {
         acceptText(typeof result.structured === 'string' ? result.structured : JSON.stringify(result.structured));
     } else if (held) {
         acceptText(held);
     }
-    const tail = stopFilter.flush();
-    emitText(parser ? parser.push(tail) : tail);
+    accept(stopFilter.flush());
     let toolCalls = [];
     if (parser) {
+        // A call cut off by max_tokens cannot be parsed, and its markup is not content.
+        const truncatedCall = lengthLimit.reached && parser.capturing;
         const finished = parser.finish();
         toolCalls = finished.calls;
-        emitText(finished.text);
+        if (!truncatedCall) emitText(finished.text);
     }
     let finish = result?.finish || 'stop';
     if (toolCalls.length) finish = 'tool_calls';
     else if (stopFilter.stopped) finish = 'stop';
+    else if (lengthLimit.reached) finish = 'length';
 
     return {
         content,
         reasoning,
         toolCalls,
         finish,
-        usage: result?.usage || { input: 0, output: 0, reasoning: 0, cacheRead: 0 },
+        // A cut-off turn is aborted before OpenCode reports usage, so it is estimated.
+        usage: result?.usage || (done() ? estimateUsage(prompt, content, reasoning) : NO_USAGE),
         nativeToolAttempt: result?.nativeToolAttempt || null,
     };
 }
@@ -96,33 +119,39 @@ async function attempt({ runner, prompt, request, signal, onText, onReasoning })
  * demands a call (weaker models occasionally do either).
  * @param {Parameters<typeof attempt>[0]} options
  */
-export async function generate({ onText = () => {}, onReasoning = () => {}, ...options }) {
-    const first = await attempt({ ...options, onText, onReasoning });
+export async function generate({ onText: textSink = () => {}, onReasoning: reasoningSink = () => {}, onFirstToken, ...options }) {
     const { request, prompt, signal } = options;
+    const noticing = (sink) => (onFirstToken ? (text) => { if (text) onFirstToken(); sink(text); } : sink);
+    const onText = noticing(textSink);
+    const onReasoning = noticing(reasoningSink);
+    const maxChars = request.maxTokens ? request.maxTokens * CHARS_PER_TOKEN : Infinity;
+    const initial = await attempt({ ...options, maxChars, onText, onReasoning });
     const forced = request.toolChoice === 'required' || (request.toolChoice && typeof request.toolChoice === 'object');
-    if (first.toolCalls.length || signal.aborted || !(forced || first.nativeToolAttempt)) return first;
+    if (initial.toolCalls.length || initial.finish === 'length' || signal.aborted || !(forced || initial.nativeToolAttempt)) return initial;
     const hasClientTools = request.tools.length > 0 && request.toolChoice !== 'none';
     let note = FORCED_RETRY_NOTE;
-    if (first.nativeToolAttempt && hasClientTools) {
-        note = `Your previous attempt to call "${first.nativeToolAttempt}" as a native tool failed: client functions are not native tools. ${FORCED_RETRY_NOTE}`;
-    } else if (first.nativeToolAttempt) {
-        note = `There is no tool named "${first.nativeToolAttempt}". Answer directly without calling tools.`;
+    if (initial.nativeToolAttempt && hasClientTools) {
+        note = `Your previous attempt to call "${initial.nativeToolAttempt}" as a native tool failed: client functions are not native tools. ${FORCED_RETRY_NOTE}`;
+    } else if (initial.nativeToolAttempt) {
+        note = `There is no tool named "${initial.nativeToolAttempt}". Answer directly without calling tools.`;
     }
     const retryPrompt = { ...prompt, system: [prompt.system, note].filter(Boolean).join(SEPARATOR) };
     let separated = false;
     const separate = (emit) => (text) => {
-        if (first.content && !separated && text) {
+        if (initial.content && !separated && text) {
             separated = true;
             onText(SEPARATOR);
         }
         emit(text);
     };
-    const second = await attempt({ ...options, prompt: retryPrompt, onText: separate(onText), onReasoning });
+    const spent = initial.content.length + (initial.content ? SEPARATOR.length : 0) + (request.limitsReasoning ? initial.reasoning.length : 0);
+    const remaining = Math.max(1, maxChars - spent);
+    const second = await attempt({ ...options, maxChars: remaining, prompt: retryPrompt, onText: separate(onText), onReasoning });
     return {
         ...second,
-        content: separated ? `${first.content}${SEPARATOR}${second.content}` : first.content + second.content,
-        reasoning: first.reasoning + second.reasoning,
-        usage: addUsage(first.usage, second.usage),
+        content: separated ? `${initial.content}${SEPARATOR}${second.content}` : initial.content + second.content,
+        reasoning: initial.reasoning + second.reasoning,
+        usage: addUsage(initial.usage, second.usage),
     };
 }
 
