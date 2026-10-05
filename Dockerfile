@@ -9,6 +9,12 @@ LABEL org.opencontainers.image.title="zengate" \
 ENV NODE_ENV=production
 WORKDIR /app
 
+# The base image can lag Debian security updates. Upgrading installed packages
+# keeps fixed CVEs in libraries such as pcre2 and perl-base out of the image.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY package.json package-lock.json ./
 # npm is only needed to install dependencies. Removing it (and corepack)
 # keeps its bundled packages, and their CVEs, out of the runtime image.
