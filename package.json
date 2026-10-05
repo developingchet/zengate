@@ -52,7 +52,7 @@
   "license": "MIT",
   "dependencies": {
     "express": "^5.1.0",
-    "opencode-ai": "1.18.32"
+    "opencode-ai": "1.18.34"
   },
   "overrides": {
     "es-define-property": "npm:@socketregistry/es-define-property@^1",
