@@ -112,7 +112,8 @@ First public release (npm only).
 - Stored responses are scoped to the API key that created them.
 - Concurrency slots are weighted by `n` and always released on timeout or disconnect. A request fails fast when the upstream keeps failing.
 
-[Unreleased]: https://github.com/developingchet/zengate/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/developingchet/zengate/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/developingchet/zengate/releases/tag/v1.1.1
 [1.1.0]: https://github.com/developingchet/zengate/releases/tag/v1.1.0
 [1.0.4]: https://github.com/developingchet/zengate/releases/tag/v1.0.4
 [1.0.3]: https://github.com/developingchet/zengate/releases/tag/v1.0.3
