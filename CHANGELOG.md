@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-05
+
+### Security
+- The Docker image upgrades installed Debian packages at build time. The pinned `node:24-slim` base still shipped `libpcre2-8-0` and `perl-base` versions with fixable HIGH and CRITICAL CVEs, which failed the Trivy scans.
+
 ## [1.1.0] - 2026-10-02
 
 ### Added
