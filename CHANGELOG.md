@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+- `opencode-ai` is pinned to 1.18.34 (was 1.18.32).
+
 ## [1.1.1] - 2026-10-05
 
 ### Security
