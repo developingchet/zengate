@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-09
+
 ### Added
 - `zengate setup --show` prints the API key saved in the config file.
 
@@ -124,7 +126,8 @@ First public release (npm only).
 - Stored responses are scoped to the API key that created them.
 - Concurrency slots are weighted by `n` and always released on timeout or disconnect. A request fails fast when the upstream keeps failing.
 
-[Unreleased]: https://github.com/developingchet/zengate/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/developingchet/zengate/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/developingchet/zengate/releases/tag/v1.2.0
 [1.1.1]: https://github.com/developingchet/zengate/releases/tag/v1.1.1
 [1.1.0]: https://github.com/developingchet/zengate/releases/tag/v1.1.0
 [1.0.4]: https://github.com/developingchet/zengate/releases/tag/v1.0.4
