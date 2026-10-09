@@ -243,7 +243,7 @@ Set values as environment variables or in the config file (same names; see [`con
 | `OPENCODE_AGENT` | `plan` | The OpenCode agent each session uses. |
 | `OPENCODE_PATH` | bundled | Use a different `opencode` binary. |
 | `OPENCODE_SERVER_URL` | none | Attach to an existing `opencode serve` instead of starting one (see below). |
-| `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD` | `opencode` / none | Basic auth for that server. |
+| `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD` | `opencode` / none | Basic auth for that server. Credentials inside `OPENCODE_SERVER_URL` are refused. |
 | `ALLOW_INSECURE_BACKEND_HTTP` | `false` | Allow a non-loopback `http://` server URL. |
 | `CONFIG_FILE` | see [First start](#first-start) | Where the config file lives (environment variable only). |
 

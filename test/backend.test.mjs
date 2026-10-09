@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../src/config.js';
 import { createBackend } from '../src/gateway.js';
-import { silentLogger } from '../src/logger.js';
+import { createLogger, silentLogger } from '../src/logger.js';
 import { createAttachedBackend, createManagedBackend } from '../src/opencode/backend.js';
 import { resolveOpencodeBinary, spawnCommand } from '../src/opencode/binary.js';
 import {
@@ -67,6 +67,25 @@ describe('attached backend', () => {
         }
         const unreachable = createAttachedBackend({ url: 'http://127.0.0.1:1', username: 'opencode', password: '', logger: silentLogger });
         await assert.rejects(unreachable.start(), /is not healthy/);
+    });
+
+    it('logs the server by scheme, host and port only', async () => {
+        const lines = [];
+        const logger = createLogger({ level: 'debug', sink: { out: (line) => lines.push(line), err: (line) => lines.push(line) } });
+        const healthy = createAttachedBackend({ url: `${fake.url}/`, username: 'opencode', password: '', logger });
+        await healthy.start();
+        await healthy.stop();
+        assert.ok(lines.includes(`Using OpenCode ${FAKE_VERSION} at ${fake.url}`), lines.join('\n'));
+
+        const { port } = new URL(fake.url);
+        for (const url of [`http://opencode:s3cret-pw@127.0.0.1:${port}`, `${fake.url}/s3cret-prefix`]) {
+            const backend = createAttachedBackend({ url, username: 'opencode', password: '', logger });
+            await assert.rejects(backend.start(), (error) => {
+                assert.equal(error.message, `OpenCode server at http://127.0.0.1:${port} is not healthy (GET /global/health). Check the URL and credentials.`);
+                return true;
+            });
+        }
+        assert.doesNotMatch(lines.join('\n'), /s3cret/);
     });
 });
 

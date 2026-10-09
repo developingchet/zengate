@@ -20,10 +20,24 @@ export function basicAuthHeader(username, password) {
 }
 
 /**
+ * A backend URL as it may appear in logs and errors: scheme, host and port.
+ * Credentials, a path and a query string can all carry secrets.
+ * @param {string} url
+ */
+export function backendOrigin(url) {
+    try {
+        return new URL(url).origin;
+    } catch {
+        return '(invalid URL)';
+    }
+}
+
+/**
  * @param {{ baseUrl: string, username?: string, password?: string, fetchImpl?: typeof fetch }} options
  */
 export function createOpencodeClient({ baseUrl, username, password, fetchImpl = fetch }) {
     const base = String(baseUrl).replace(/\/+$/, '');
+    const shownBase = backendOrigin(base);
     const auth = basicAuthHeader(username, password);
     const headers = (extra) => ({ accept: 'application/json', ...(auth ? { authorization: auth } : {}), ...extra });
 
@@ -41,7 +55,7 @@ export function createOpencodeClient({ baseUrl, username, password, fetchImpl = 
             });
         } catch (error) {
             if (error?.name === 'AbortError' || error?.name === 'TimeoutError') throw error;
-            throw new BackendError(`OpenCode backend unreachable at ${base}: ${error?.cause?.code || error?.message}`, { cause: error });
+            throw new BackendError(`OpenCode backend unreachable at ${shownBase}: ${error?.cause?.code || error?.message}`, { cause: error });
         }
         const text = await response.text();
         let parsed = null;

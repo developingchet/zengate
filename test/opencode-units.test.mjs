@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createCatalog, toOpenAIModel } from '../src/opencode/catalog.js';
-import { BackendError, basicAuthHeader, createOpencodeClient } from '../src/opencode/client.js';
+import { BackendError, backendOrigin, basicAuthHeader, createOpencodeClient } from '../src/opencode/client.js';
 import { mapBackendError, mapModelError } from '../src/opencode/model-errors.js';
 import { readSseFrames } from '../src/opencode/sse-reader.js';
 import { ApiError } from '../src/server/errors.js';
@@ -299,6 +299,19 @@ describe('opencode client', () => {
             fetchImpl: async () => { throw Object.assign(new Error('aborted'), { name: 'AbortError' }); },
         });
         await assert.rejects(aborting.prompt('s', {}, { signal: AbortSignal.abort() }), { name: 'AbortError' });
+    });
+
+    it('names the backend by scheme, host and port only in errors', async () => {
+        const client = createOpencodeClient({
+            baseUrl: 'https://user:s3cret-pw@opencode.example:8443/prefix-token/?key=s3cret-key',
+            fetchImpl: async () => { throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } }); },
+        });
+        await assert.rejects(client.health(), (error) => {
+            assert.equal(error.message, 'OpenCode backend unreachable at https://opencode.example:8443: ECONNREFUSED');
+            return true;
+        });
+        assert.equal(backendOrigin('http://127.0.0.1:4096/'), 'http://127.0.0.1:4096');
+        assert.equal(backendOrigin('not a url'), '(invalid URL)');
     });
 
     it('opens the event stream and reports failures', async () => {
