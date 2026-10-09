@@ -4,9 +4,10 @@
 #   sudo git clone https://github.com/developingchet/zengate.git /opt/zengate && cd /opt/zengate && sudo npm ci --omit=dev
 #   sudo cp deploy/zengate.service /etc/systemd/system/
 #   sudo systemctl daemon-reload && sudo systemctl enable --now zengate
-#   sudo journalctl -u zengate    # the generated API key is printed once here
+#   sudo cat /var/lib/zengate/config.json    # the API key generated on first start
 #
-# The key is stored in /var/lib/zengate/config.json (mode 0600).
+# The key is stored in /var/lib/zengate/config.json (mode 0600) and is never
+# written to the journal.
 # Optional overrides go in /etc/zengate.env (KEY=value per line).
 
 [Unit]

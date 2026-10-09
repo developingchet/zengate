@@ -63,7 +63,7 @@ zengate
 
 ```bash
 docker run -d --name zengate -p 127.0.0.1:8083:8083 -v zengate:/data developingchet/zengate
-docker logs zengate   # shows the generated key once
+docker exec zengate node index.js setup --show   # prints the generated key
 ```
 
 Images are published for `linux/amd64` and `linux/arm64`, tagged `latest`, `1`, `1.2` and `1.2.3`.
@@ -101,16 +101,18 @@ npm start
 
 ### First start
 
-The gateway creates a config file with a random API key and prints the key once:
+The gateway creates a config file with a random API key and says where it is. The key itself is not printed, so it does not end up in service logs:
 
 ```
-  Created a gateway API key (saved to /home/you/.config/zengate/config.json):
-
-    sk-zg-...
+  Created a gateway API key and saved it to /home/you/.config/zengate/config.json.
+  Use it as the OpenAI API key in your client. To see it, run `zengate setup --show`
+  or read API_KEY from that file; `zengate setup --rotate` replaces it.
 
 OpenAI-compatible API on http://127.0.0.1:8083/v1 (auth: API key)
 7 models: big-pickle, ...
 ```
+
+In Docker, run `docker exec zengate node index.js setup --show`; under systemd, read `/var/lib/zengate/config.json` with `sudo`.
 
 Where the config file lives:
 
@@ -129,6 +131,7 @@ Key commands (`npm run setup -- <flag>` from a source checkout):
 ```bash
 zengate setup            # create a key if none exists
 zengate setup --rotate   # replace the key
+zengate setup --show     # print the saved key
 zengate setup --print    # print a fresh key without saving it (for env vars and secret stores)
 zengate --help
 ```
@@ -275,7 +278,7 @@ sha256sum -c checksums.txt
 
 ## Security
 
-- The API key is required unless you set `ALLOW_NO_AUTH`. Keys are compared in constant time, the config file is written with mode `0600`, and keys are never logged.
+- The API key is required unless you set `ALLOW_NO_AUTH`. Keys are compared in constant time, the config file is written with mode `0600`, and keys are never logged: the first start reports where the generated key was saved, not the key.
 - The gateway binds to loopback by default and warns when it listens elsewhere, because traffic is plain HTTP, so put TLS in front.
 - OpenCode tools are never executed, and OpenCode runs isolated from your home directory and configuration.
 - Attachment URLs must be `https` and resolve to public addresses. Loopback, private, link-local and similar ranges (including IPv6 forms that embed them) are refused, which blocks SSRF into your network. The gateway fetches them itself and connects only to the address it checked, including on every redirect, so DNS rebinding cannot reach an internal host. OpenCode never sees the URL.

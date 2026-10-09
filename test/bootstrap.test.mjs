@@ -6,6 +6,8 @@ import path from 'node:path';
 import { KEY_PREFIX, generateApiKey, loadOrProvisionConfig, securityWarnings, writeConfigFile } from '../src/bootstrap.js';
 import { ConfigError, loadConfig } from '../src/config.js';
 import { createLogger, silentLogger } from '../src/logger.js';
+import { authMiddleware } from '../src/server/middleware.js';
+import { fakeReq, run } from './helpers/fake-http.mjs';
 
 const KEY = 'test-key-0123456789abcdef';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'zengate-bootstrap-test-'));
@@ -54,7 +56,29 @@ describe('loadOrProvisionConfig', () => {
         assert.ok(key.startsWith(KEY_PREFIX));
         const saved = JSON.parse(fs.readFileSync(configPath, 'utf8'));
         assert.deepEqual(saved, { PORT: 9100, API_KEY: key });
-        assert.ok(lines.some((line) => line.includes(key)), 'the new key is printed once');
+        assert.ok(lines.some((line) => line.includes(configPath)), 'says where the key was saved');
+        assert.ok(lines.some((line) => line.includes('zengate setup --show')), 'says how to read it back');
+    });
+
+    it('keeps the generated key out of its output and logs', () => {
+        const configPath = path.join(fs.mkdtempSync(path.join(tmp, 'quiet-')), 'config.json');
+        const output = [];
+        const logger = createLogger({ level: 'debug', sink: { out: (line) => output.push(line), err: (line) => output.push(line) } });
+        const config = loadOrProvisionConfig({ configPath, env: {}, logger, print: (line) => output.push(line) });
+        const [key] = config.API_KEYS;
+        assert.ok(output.length > 0);
+        assert.ok(!output.join('\n').includes(key));
+        assert.ok(!output.join('\n').includes(KEY_PREFIX), 'not even a fragment of the key');
+    });
+
+    it('serves the saved key on later starts and accepts it as a bearer key', () => {
+        const configPath = path.join(fs.mkdtempSync(path.join(tmp, 'restart-')), 'config.json');
+        const first = loadOrProvisionConfig({ configPath, env: {}, logger: silentLogger, print: () => {} });
+        const second = loadOrProvisionConfig({ configPath, env: {}, logger: silentLogger, print: () => assert.fail('no output once a key exists') });
+        assert.deepEqual(second.API_KEYS, first.API_KEYS);
+        const auth = authMiddleware({ apiKeys: second.API_KEYS, allowNoAuth: false });
+        const { nextCalled } = run(auth, fakeReq({ headers: { authorization: `Bearer ${JSON.parse(fs.readFileSync(configPath, 'utf8')).API_KEY}` } }));
+        assert.ok(nextCalled);
     });
 
     it('creates config.json when it does not exist', () => {

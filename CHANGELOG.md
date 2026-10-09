@@ -4,8 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- `zengate setup --show` prints the API key saved in the config file.
+
 ### Changed
 - `opencode-ai` is pinned to 1.18.34 (was 1.18.32).
+
+### Security
+- The API key generated on first start is no longer printed. Docker and systemd keep stdout as logs, so anyone who could read those logs had a working key. The first start now says where the key was saved; read it back with `zengate setup --show` (`docker exec zengate node index.js setup --show` in Docker) or from the config file.
 
 ## [1.1.1] - 2026-10-05
 

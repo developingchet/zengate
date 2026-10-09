@@ -41,13 +41,11 @@ export function loadOrProvisionConfig({ configPath, env = process.env, logger, p
             'or set ALLOW_NO_AUTH=true to deliberately serve without a key.',
         ]);
     }
+    // Only where the key is, never the key: service managers keep stdout as logs.
     print('');
-    print(`  Created a gateway API key (saved to ${configPath}):`);
-    print('');
-    print(`    ${key}`);
-    print('');
-    print('  Use it as the OpenAI API key in your client. It is not shown again;');
-    print('  read it from that file, or run `zengate setup --rotate` to replace it.');
+    print(`  Created a gateway API key and saved it to ${configPath}.`);
+    print('  Use it as the OpenAI API key in your client. To see it, run `zengate setup --show`');
+    print('  or read API_KEY from that file; `zengate setup --rotate` replaces it.');
     print('');
     logger.debug('Provisioned a new API key', { configPath });
     return loadConfig({ ...fileConfig, API_KEY: key }, env);
