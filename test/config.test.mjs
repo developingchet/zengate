@@ -95,6 +95,18 @@ describe('loadConfig', () => {
         assert.match(problemsOf(() => loadConfig({ OPENCODE_SERVER_URL: 'ftp://127.0.0.1' }, {}))[0], /http or https/);
     });
 
+    it('rejects credentials in the backend URL and points to the dedicated settings', () => {
+        for (const url of ['https://opencode:s3cret-pw@remote.example', 'http://user@127.0.0.1:4096', 'https://:s3cret-pw@remote.example']) {
+            const problems = problemsOf(() => loadConfig({ OPENCODE_SERVER_URL: url }, {}));
+            assert.equal(problems.length, 1, url);
+            assert.match(problems[0], /must not contain a username or password/);
+            assert.match(problems[0], /OPENCODE_SERVER_PASSWORD/);
+            assert.doesNotMatch(problems[0], /s3cret-pw/);
+        }
+        const separate = loadConfig({}, { OPENCODE_SERVER_URL: 'https://remote.example', OPENCODE_SERVER_USERNAME: 'me', OPENCODE_SERVER_PASSWORD: 's3cret-pw' });
+        assert.equal(separate.OPENCODE_SERVER_PASSWORD, 's3cret-pw');
+    });
+
     it('parses TRUST_PROXY as booleans or hop counts', () => {
         assert.equal(loadConfig({}, { TRUST_PROXY: 'true' }).TRUST_PROXY, 1);
         assert.equal(loadConfig({}, { TRUST_PROXY: 'false' }).TRUST_PROXY, 0);

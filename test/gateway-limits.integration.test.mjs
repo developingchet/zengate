@@ -1,5 +1,6 @@
 import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import dns from 'node:dns/promises';
 import net from 'node:net';
 import { loadConfig } from '../src/config.js';
 import { startGateway } from '../src/gateway.js';
@@ -123,6 +124,62 @@ describe('gateway limits and cancellation', () => {
         assert.match(allowed.headers.get('access-control-expose-headers'), /x-request-id/);
         const other = await stack.request('/v1/models', { headers: { origin: 'https://evil.example' } });
         assert.equal(other.headers.get('access-control-allow-origin'), null);
+    });
+});
+
+describe('attachment host checks', () => {
+    let stack;
+    before(async () => {
+        stack = await startStack({ env: { MAX_CONCURRENT: '1', MAX_QUEUE: '2' }, overrides: { REQUEST_TIMEOUT_MS: 400 } });
+    });
+    after(async () => { await stack?.stop(); });
+    afterEach(() => stack.fake.setBehavior(null));
+
+    const slots = async () => (await stack.json('/metrics')).body.slots;
+    const idle = () => waitFor(async () => (await slots()).active === 0);
+    const imageChat = (url) => body({ model: 'vision-free', messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url } }] }] });
+    const imageResponse = (url) => ({ model: 'vision-free', input: [{ role: 'user', content: [{ type: 'input_image', image_url: url }] }] });
+    const endpoints = [['/v1/chat/completions', imageChat], ['/v1/responses', imageResponse]];
+
+    it('resolves attachment hosts only once the request holds a slot', async (t) => {
+        const lookup = t.mock.method(dns, 'lookup', async () => [{ address: '10.0.0.9', family: 4 }]);
+        stack.fake.setBehavior(hang);
+        const prompts = stack.fake.state.prompts.length;
+        const controller = new AbortController();
+        const first = stack.request('/v1/chat/completions', { body: body(), signal: controller.signal }).catch((error) => error);
+        await waitFor(() => stack.fake.state.prompts.length > prompts);
+
+        const queued = endpoints.map(([path, attaching]) => stack.json(path, { body: attaching('https://files.example/a.png') }));
+        await waitFor(async () => (await slots()).queued === 2);
+        assert.equal(lookup.mock.callCount(), 0, 'nothing is resolved while the requests wait for a slot');
+
+        controller.abort();
+        await first;
+        for (const { status, body: error } of await Promise.all(queued)) {
+            assert.equal(status, 400);
+            assert.equal(error.error.code, 'invalid_attachment_url');
+            assert.match(error.error.message, /'files.example' is not a public address/);
+        }
+        assert.equal(lookup.mock.callCount(), 2);
+        await idle();
+    });
+
+    it('ends a request whose attachment host never resolves at REQUEST_TIMEOUT_MS', async (t) => {
+        const held = [];
+        t.mock.method(dns, 'lookup', () => new Promise((resolve) => held.push(() => resolve([{ address: '93.184.215.14', family: 4 }]))));
+        try {
+            for (const [path, attaching] of endpoints) {
+                const started = Date.now();
+                const { status, body: error } = await stack.json(path, { body: attaching('https://unanswered.example/a.png') });
+                assert.equal(status, 504, path);
+                assert.equal(error.error.code, 'timeout');
+                assert.ok(Date.now() - started < 4000, 'well before the 5s lookup timeout');
+                await idle();
+            }
+            assert.equal(held.length, 2);
+        } finally {
+            held.forEach((answer) => answer());
+        }
     });
 });
 

@@ -25,9 +25,10 @@ COPY index.js ./
 COPY src ./src
 COPY scripts/setup.mjs ./scripts/setup.mjs
 
-# The gateway key lives in /data/config.json (created on first start and
-# printed once in the logs). Mount a volume there to keep it across restarts,
-# or pass API_KEY as an environment variable instead.
+# The gateway key lives in /data/config.json, created on first start and
+# never written to the logs. Read it with
+# `docker exec <container> node index.js setup --show`. Mount a volume there to
+# keep it across restarts, or pass API_KEY as an environment variable instead.
 RUN mkdir -p /data && chown node:node /data
 VOLUME ["/data"]
 ENV CONFIG_FILE=/data/config.json \

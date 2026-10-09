@@ -127,6 +127,9 @@ function validateServerUrl(config, problems) {
         problems.push('OPENCODE_SERVER_URL must be an absolute http(s) URL');
         return;
     }
+    if (url.username || url.password) {
+        problems.push('OPENCODE_SERVER_URL must not contain a username or password; set OPENCODE_SERVER_USERNAME and OPENCODE_SERVER_PASSWORD instead');
+    }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
         problems.push('OPENCODE_SERVER_URL must use http or https');
     } else if (url.protocol === 'http:' && !isLoopbackHost(url.hostname) && !config.ALLOW_INSECURE_BACKEND_HTTP) {

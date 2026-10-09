@@ -4,8 +4,17 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- `zengate setup --show` prints the API key saved in the config file.
+
 ### Changed
 - `opencode-ai` is pinned to 1.18.34 (was 1.18.32).
+
+### Security
+- The API key generated on first start is no longer printed. Docker and systemd keep stdout as logs, so anyone who could read those logs had a working key. The first start now says where the key was saved; read it back with `zengate setup --show` (`docker exec zengate node index.js setup --show` in Docker) or from the config file.
+- Attachment hosts were resolved before the request took a concurrency slot, so `MAX_CONCURRENT` and `REQUEST_TIMEOUT_MS` did not apply, and a timed-out lookup kept running on Node's small DNS thread pool. A client sending names that never resolve could tie up that pool for every request. The check now runs inside the slot, stops at the request's deadline or disconnect, and at most two lookups are in flight across the gateway.
+- Errors about a failed attachment download, which are also logged at `debug` level, showed the URL's full path. Services that put a signed token in the path (rather than the query string) exposed it there. Attachment URLs now appear as their origin only, for example `https://files.example/…`.
+- `OPENCODE_SERVER_URL` with a username or password in it (`https://user:pass@host`) is refused at startup with a pointer to `OPENCODE_SERVER_USERNAME` and `OPENCODE_SERVER_PASSWORD`. Such a URL never worked, because `fetch` refuses URLs with credentials, but it was written in full to the startup and health-check messages. Those messages, and backend connection errors, now name the server by scheme, host and port only.
 
 ## [1.1.1] - 2026-10-05
 

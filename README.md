@@ -63,7 +63,7 @@ zengate
 
 ```bash
 docker run -d --name zengate -p 127.0.0.1:8083:8083 -v zengate:/data developingchet/zengate
-docker logs zengate   # shows the generated key once
+docker exec zengate node index.js setup --show   # prints the generated key
 ```
 
 Images are published for `linux/amd64` and `linux/arm64`, tagged `latest`, `1`, `1.2` and `1.2.3`.
@@ -101,16 +101,18 @@ npm start
 
 ### First start
 
-The gateway creates a config file with a random API key and prints the key once:
+The gateway creates a config file with a random API key and says where it is. The key itself is not printed, so it does not end up in service logs:
 
 ```
-  Created a gateway API key (saved to /home/you/.config/zengate/config.json):
-
-    sk-zg-...
+  Created a gateway API key and saved it to /home/you/.config/zengate/config.json.
+  Use it as the OpenAI API key in your client. To see it, run `zengate setup --show`
+  or read API_KEY from that file; `zengate setup --rotate` replaces it.
 
 OpenAI-compatible API on http://127.0.0.1:8083/v1 (auth: API key)
 7 models: big-pickle, ...
 ```
+
+In Docker, run `docker exec zengate node index.js setup --show`; under systemd, read `/var/lib/zengate/config.json` with `sudo`.
 
 Where the config file lives:
 
@@ -129,6 +131,7 @@ Key commands (`npm run setup -- <flag>` from a source checkout):
 ```bash
 zengate setup            # create a key if none exists
 zengate setup --rotate   # replace the key
+zengate setup --show     # print the saved key
 zengate setup --print    # print a fresh key without saving it (for env vars and secret stores)
 zengate --help
 ```
@@ -240,7 +243,7 @@ Set values as environment variables or in the config file (same names; see [`con
 | `OPENCODE_AGENT` | `plan` | The OpenCode agent each session uses. |
 | `OPENCODE_PATH` | bundled | Use a different `opencode` binary. |
 | `OPENCODE_SERVER_URL` | none | Attach to an existing `opencode serve` instead of starting one (see below). |
-| `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD` | `opencode` / none | Basic auth for that server. |
+| `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD` | `opencode` / none | Basic auth for that server. Credentials inside `OPENCODE_SERVER_URL` are refused. |
 | `ALLOW_INSECURE_BACKEND_HTTP` | `false` | Allow a non-loopback `http://` server URL. |
 | `CONFIG_FILE` | see [First start](#first-start) | Where the config file lives (environment variable only). |
 
@@ -275,12 +278,12 @@ sha256sum -c checksums.txt
 
 ## Security
 
-- The API key is required unless you set `ALLOW_NO_AUTH`. Keys are compared in constant time, the config file is written with mode `0600`, and keys are never logged.
+- The API key is required unless you set `ALLOW_NO_AUTH`. Keys are compared in constant time, the config file is written with mode `0600`, and keys are never logged: the first start reports where the generated key was saved, not the key.
 - The gateway binds to loopback by default and warns when it listens elsewhere, because traffic is plain HTTP, so put TLS in front.
 - OpenCode tools are never executed, and OpenCode runs isolated from your home directory and configuration.
 - Attachment URLs must be `https` and resolve to public addresses. Loopback, private, link-local and similar ranges (including IPv6 forms that embed them) are refused, which blocks SSRF into your network. The gateway fetches them itself and connects only to the address it checked, including on every redirect, so DNS rebinding cannot reach an internal host. OpenCode never sees the URL.
 - Conversation history is sent to the model as a tagged transcript. Message text, file names and tool names are escaped so they cannot fake another turn, a tool result or a function call.
-- Rate limiting, a bounded queue with a wait limit, body and attachment size limits, and per-request timeouts all apply. Requests that are uploading, queued or running are capped at `MAX_CONCURRENT + MAX_QUEUE`, which bounds the memory held by request bodies, and one client address may be uploading at most a quarter of that at once. Attachment URLs appear in errors and logs without their query string or credentials. A request with `n` choices uses `n` concurrency slots, and slots are always released on disconnect or timeout.
+- Rate limiting, a bounded queue with a wait limit, body and attachment size limits, and per-request timeouts all apply. Requests that are uploading, queued or running are capped at `MAX_CONCURRENT + MAX_QUEUE`, which bounds the memory held by request bodies, and one client address may be uploading at most a quarter of that at once. Attachment hosts are resolved inside the request's slot and timeout, with at most two DNS lookups in flight across the gateway. Attachment URLs appear in errors and logs as their origin only, without path, query string or credentials. A request with `n` choices uses `n` concurrency slots, and slots are always released on disconnect or timeout.
 - Stored responses (`previous_response_id`, `GET /v1/responses/{id}`) are visible only to the API key that created them.
 - The gateway sends no telemetry and never logs request bodies. OpenCode's auto-update and session sharing are disabled.
 

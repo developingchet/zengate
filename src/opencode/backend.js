@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { createOpencodeClient } from './client.js';
+import { backendOrigin, createOpencodeClient } from './client.js';
 import { resolveOpencodeBinary, spawnCommand } from './binary.js';
 import {
     backendEnv, createIsolatedRoot, HEARTBEAT_MS, randomPassword, recordBackendPid, removeIsolatedRoot, sweepStaleRoots, touchIsolatedRoot,
@@ -227,6 +227,7 @@ export function createManagedBackend({ opencodePath, logger }) {
 /** Uses an OpenCode server someone else runs (OPENCODE_SERVER_URL). */
 export function createAttachedBackend({ url, username, password, logger }) {
     const client = createOpencodeClient({ baseUrl: url, username, password });
+    const shownUrl = backendOrigin(url);
     let ready = false;
     let version = null;
     let timer = null;
@@ -245,8 +246,8 @@ export function createAttachedBackend({ url, username, password, logger }) {
     return Object.freeze({
         mode: 'attached',
         async start() {
-            if (!(await probe())) throw new Error(`OpenCode server at ${url} is not healthy (GET /global/health). Check the URL and credentials.`);
-            logger.info(`Using OpenCode ${version || ''} at ${url}`.replace('  ', ' '));
+            if (!(await probe())) throw new Error(`OpenCode server at ${shownUrl} is not healthy (GET /global/health). Check the URL and credentials.`);
+            logger.info(`Using OpenCode ${version || ''} at ${shownUrl}`.replace('  ', ' '));
             logger.warn('Attached mode: the gateway rejects tool permissions for its own sessions, but the server\'s own configuration still applies. Prefer the managed backend.');
             timer = setInterval(probe, 10000);
             timer.unref();

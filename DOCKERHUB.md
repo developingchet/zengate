@@ -8,7 +8,7 @@ Point any OpenAI SDK or tool at it and use models like `big-pickle`: Chat Comple
 
 ```bash
 docker run -d --name zengate -p 127.0.0.1:8083:8083 -v zengate:/data developingchet/zengate
-docker logs zengate   # prints the generated API key once
+docker exec zengate node index.js setup --show   # prints the generated API key
 ```
 
 Then use `http://127.0.0.1:8083/v1` as the OpenAI base URL and the `sk-zg-...` key as the API key:

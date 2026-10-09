@@ -1,7 +1,7 @@
 import { generateApiKey, writeConfigFile } from './bootstrap.js';
 import { readConfigFile } from './config.js';
 
-const SETUP_FLAGS = new Set(['--rotate', '--print']);
+const SETUP_FLAGS = new Set(['--rotate', '--print', '--show']);
 
 export const HELP_TEXT = `zengate: an OpenAI-compatible API for OpenCode's free Zen models
 
@@ -9,6 +9,7 @@ Usage:
   zengate                   start the gateway (creates an API key on first start)
   zengate setup             create config.json with an API key (keeps an existing key)
   zengate setup --rotate    replace the API key
+  zengate setup --show      print the saved API key
   zengate setup --print     print a fresh key without saving it
   zengate --version         print the version
   zengate --help            show this help
@@ -29,19 +30,29 @@ export function parseCommand(args) {
     return { command: 'unknown', flags: args };
 }
 
+/** Print the API key saved in config.json. */
+function showKey({ configPath, flags, out }) {
+    if (flags.length > 1) throw new Error('--show cannot be combined with other setup options.');
+    const { API_KEY: key } = readConfigFile(configPath);
+    if (!key) throw new Error(`${configPath} has no API_KEY. Run \`zengate setup\` to create one.`);
+    out(key);
+    return 0;
+}
+
 /**
- * Create, keep or rotate the gateway API key in config.json.
+ * Create, keep, show or rotate the gateway API key in config.json.
  * @param {{ configPath: string, flags: string[], out: (line?: string) => void }} options
  * @returns {number} process exit code
  */
 export function runSetup({ configPath, flags, out }) {
+    if (flags.includes('--show')) return showKey({ configPath, flags, out });
     if (flags.includes('--print')) {
         out(generateApiKey());
         return 0;
     }
     const current = readConfigFile(configPath);
     if (current.API_KEY && !flags.includes('--rotate')) {
-        out(`${configPath} already has an API_KEY. Use --rotate to replace it.`);
+        out(`${configPath} already has an API_KEY. Use --show to print it or --rotate to replace it.`);
         return 0;
     }
     const key = generateApiKey();

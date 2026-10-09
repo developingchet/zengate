@@ -54,6 +54,7 @@ describe('parseCommand', () => {
         assert.equal(parseCommand(['--version']).command, 'version');
         assert.equal(parseCommand(['-v']).command, 'version');
         assert.deepEqual(parseCommand(['setup', '--rotate']), { command: 'setup', flags: ['--rotate'] });
+        assert.deepEqual(parseCommand(['setup', '--show']), { command: 'setup', flags: ['--show'] });
     });
 
     it('rejects unknown commands and flags', () => {
@@ -93,5 +94,27 @@ describe('runSetup', () => {
         assert.equal(lines.length, 1);
         assert.ok(lines[0].startsWith(KEY_PREFIX));
         assert.ok(!fs.existsSync(file));
+    });
+
+    it('--show prints the saved key and changes nothing', () => {
+        const file = path.join(tmp, 'show.json');
+        const content = JSON.stringify({ API_KEY: 'saved-key-0123456789', PORT: 9000 });
+        fs.writeFileSync(file, content);
+        const { lines, out } = capture();
+        assert.equal(runSetup({ configPath: file, flags: ['--show'], out }), 0);
+        assert.deepEqual(lines, ['saved-key-0123456789']);
+        assert.equal(fs.readFileSync(file, 'utf8'), content);
+    });
+
+    it('--show fails without a saved key and refuses other flags', () => {
+        const missing = path.join(tmp, 'show-missing.json');
+        assert.throws(() => runSetup({ configPath: missing, flags: ['--show'], out: () => assert.fail('no output') }), /has no API_KEY/);
+        assert.ok(!fs.existsSync(missing));
+        const file = path.join(tmp, 'show-combined.json');
+        fs.writeFileSync(file, JSON.stringify({ API_KEY: 'saved-key-0123456789' }));
+        for (const other of ['--rotate', '--print']) {
+            assert.throws(() => runSetup({ configPath: file, flags: ['--show', other], out: () => assert.fail('no output') }), /cannot be combined/);
+        }
+        assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).API_KEY, 'saved-key-0123456789');
     });
 });

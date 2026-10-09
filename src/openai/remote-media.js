@@ -4,7 +4,7 @@ import { ApiError, invalidRequest, unsupported } from '../server/errors.js';
 import { fileBlock } from './markup.js';
 import { mapLimited } from './map-limited.js';
 import { kindForMime } from './media.js';
-import { isBlockedAddress, MAX_REMOTE_PARTS, publicLookup, resolvePublic } from './url-guard.js';
+import { assertPublicUrls, isBlockedAddress, publicLookup, resolvePublic } from './url-guard.js';
 
 const FETCH_TIMEOUT_MS = 30000;
 const MAX_REDIRECTS = 3;
@@ -18,14 +18,15 @@ const USER_AGENT = 'zengate (+https://github.com/developingchet/zengate)';
 const attachmentError = (message) => invalidRequest(message, null, 'invalid_attachment_url');
 
 /**
- * An attachment URL as it may appear in errors and logs: signed URLs carry
- * their token in the query string, and some URLs carry credentials, so both
- * are left out.
+ * An attachment URL as it may appear in errors and logs: only its origin.
+ * Signed URLs carry their token in the query string or in a path segment,
+ * and some URLs carry credentials, so all of those are left out.
  */
 export function shown(url) {
     try {
         const parsed = new URL(url);
-        return `${parsed.origin}${parsed.pathname}${parsed.search ? '?…' : ''}`;
+        const bare = parsed.pathname === '/' && !parsed.search && !parsed.hash;
+        return `${parsed.origin}/${bare ? '' : '…'}`;
     } catch {
         return '(invalid URL)';
     }
@@ -157,7 +158,7 @@ function requestOnce(url, { transport, lookup, signal }) {
 async function download(url, { transport, lookup, isBlocked, signal, limit }) {
     let current = new URL(url);
     for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
-        if (net.isIP(current.hostname.replace(/^\[|\]$/g, ''))) await resolvePublic(current.hostname, isBlocked);
+        if (net.isIP(current.hostname.replace(/^\[|\]$/g, ''))) await resolvePublic(current.hostname, { isBlocked });
         const response = await requestOnce(current, { transport, lookup, signal });
         const status = response.statusCode || 0;
         if (status >= 300 && status < 400 && response.headers.location) {
@@ -198,6 +199,10 @@ async function inlinePart(part, options) {
  * inlined text) fetched by the gateway, so OpenCode never fetches a
  * client-chosen URL itself: no redirects to internal hosts, no DNS
  * rebinding, and remote files obey the same size limits as inline ones.
+ * Every host is checked before the first download starts. Callers run this
+ * inside the request's slot, so the DNS lookups and downloads count against
+ * MAX_CONCURRENT and stop when `signal` aborts (client disconnect or
+ * REQUEST_TIMEOUT_MS).
  * @param {{ parts: object[] }} prompt from buildPrompt
  * @param {{ maxBytes: number, maxTotalBytes: number, signal: AbortSignal,
  *           transport?: { request: typeof https.request }, isBlocked?: (address: string) => boolean }} options
@@ -206,14 +211,13 @@ async function inlinePart(part, options) {
 export async function inlineRemoteAttachments(prompt, { maxBytes, maxTotalBytes, signal, transport = https, isBlocked = isBlockedAddress }) {
     const remote = prompt.parts.filter((part) => typeof part.url === 'string' && part.url.startsWith('https:'));
     if (remote.length === 0) return prompt;
-    if (remote.length > MAX_REMOTE_PARTS) {
-        throw invalidRequest(`At most ${MAX_REMOTE_PARTS} attachments may be URLs; send the rest as data URIs.`, null, 'too_many_attachment_urls');
-    }
+    await assertPublicUrls(remote, { isBlocked, signal });
     // One failed attachment fails the request, so the other downloads are cancelled too.
     const siblings = new AbortController();
+    const downloads = AbortSignal.any([signal, siblings.signal]);
     const options = {
-        transport, lookup: publicLookup(isBlocked), isBlocked,
-        signal: AbortSignal.any([signal, siblings.signal]),
+        transport, lookup: publicLookup({ isBlocked, signal: downloads }), isBlocked,
+        signal: downloads,
         budget: createBudget({ maxBytes, maxTotalBytes }),
     };
     const fetched = await mapLimited(remote, PARALLEL_FETCHES, (part) => inlinePart(part, options), () => siblings.abort());
