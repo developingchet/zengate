@@ -6,7 +6,6 @@ import { inlineRemoteAttachments } from './remote-media.js';
 import { createResponseBuilder } from './response-builder.js';
 import { parseResponsesRequest } from './responses-request.js';
 import { openSse } from './sse-writer.js';
-import { assertPublicUrls } from './url-guard.js';
 
 function assistantHistory(result) {
     return { role: 'assistant', content: result.content, media: [], toolCalls: result.toolCalls.map(({ id, name, arguments: args }) => ({ id, name, arguments: args })) };
@@ -22,7 +21,6 @@ export function responsesHandlers({ runner, catalog, store, limits }) {
         const request = parseResponsesRequest(req.body, limits, scoped);
         const model = await catalog.resolve(request.model);
         const prompt = buildPrompt(request, model);
-        await assertPublicUrls(prompt.parts);
         setIgnoredParams(res, request.ignored);
 
         await req.withSlot(async (signal) => {

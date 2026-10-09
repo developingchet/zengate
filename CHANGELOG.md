@@ -12,6 +12,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Security
 - The API key generated on first start is no longer printed. Docker and systemd keep stdout as logs, so anyone who could read those logs had a working key. The first start now says where the key was saved; read it back with `zengate setup --show` (`docker exec zengate node index.js setup --show` in Docker) or from the config file.
+- Attachment hosts were resolved before the request took a concurrency slot, so `MAX_CONCURRENT` and `REQUEST_TIMEOUT_MS` did not apply, and a timed-out lookup kept running on Node's small DNS thread pool. A client sending names that never resolve could tie up that pool for every request. The check now runs inside the slot, stops at the request's deadline or disconnect, and at most two lookups are in flight across the gateway.
 
 ## [1.1.1] - 2026-10-05
 

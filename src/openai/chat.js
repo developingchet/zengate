@@ -7,7 +7,6 @@ import { mapLimited } from './map-limited.js';
 import { buildPrompt } from './prompt.js';
 import { inlineRemoteAttachments } from './remote-media.js';
 import { openSse } from './sse-writer.js';
-import { assertPublicUrls } from './url-guard.js';
 
 const completionId = () => `chatcmpl-${crypto.randomBytes(12).toString('hex')}`;
 const now = () => Math.floor(Date.now() / 1000);
@@ -40,7 +39,6 @@ export function chatCompletionsHandler({ runner, catalog, limits }) {
         const request = parseChatRequest(req.body, limits);
         const model = await catalog.resolve(request.model);
         const prompt = buildPrompt(request, model);
-        await assertPublicUrls(prompt.parts);
         setIgnoredParams(res, request.ignored);
         await req.withSlot(async (signal, parallel) => {
             const ready = await inlineRemoteAttachments(prompt, { ...limits, signal });

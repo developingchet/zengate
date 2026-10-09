@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import dns from 'node:dns/promises';
-import { assertPublicUrls, isBlockedAddress } from '../src/openai/url-guard.js';
+import { assertPublicUrls, isBlockedAddress, resolvePublic } from '../src/openai/url-guard.js';
 
 const part = (url) => ({ type: 'file', mime: 'image/png', url });
 
@@ -81,5 +81,69 @@ describe('assertPublicUrls', () => {
         await rejected('https://mixed.example/a.png');
         await rejected('https://empty.example/a.png');
         await rejected('https://name.invalid/a.png', /Attachment host 'name.invalid' is not a public address/);
+    });
+});
+
+describe('DNS lookups', () => {
+    const PUBLIC = [{ address: '93.184.215.14', family: 4 }];
+    const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+    /** A dns.lookup that answers only when the test says so. */
+    function heldLookups(t) {
+        const held = [];
+        const lookup = t.mock.method(dns, 'lookup', () => new Promise((resolve) => held.push(() => resolve(PUBLIC))));
+        const answerAll = async () => {
+            while (held.length) {
+                held.shift()();
+                await tick();
+            }
+        };
+        return { held, lookup, answerAll };
+    }
+
+    it('stops waiting when the request ends, with the request\'s reason', async (t) => {
+        const { lookup, answerAll } = heldLookups(t);
+        const controller = new AbortController();
+        const reason = new Error('client went away');
+        const pending = resolvePublic('slow.example', { signal: controller.signal });
+        await tick();
+        controller.abort(reason);
+        await assert.rejects(pending, (error) => error === reason);
+        assert.equal(lookup.mock.callCount(), 1);
+        await answerAll();
+    });
+
+    it('keeps at most two lookups in flight, counting ones nobody waits for any more', async (t) => {
+        const { held, lookup, answerAll } = heldLookups(t);
+        const controller = new AbortController();
+        const reason = new Error('request timed out');
+        const abandoned = Array.from({ length: 6 }, (_, i) => resolvePublic(`slow${i}.example`, { signal: controller.signal }));
+        await tick();
+        assert.equal(lookup.mock.callCount(), 2);
+        controller.abort(reason);
+        for (const pending of abandoned) await assert.rejects(pending, (error) => error === reason);
+
+        const next = resolvePublic('next.example');
+        await tick();
+        assert.equal(lookup.mock.callCount(), 2, 'the two abandoned lookups still hold their permits');
+        held.shift()();
+        await tick();
+        assert.equal(lookup.mock.callCount(), 3, 'a permit passes on once a lookup really finishes');
+        await answerAll();
+        assert.deepEqual(await next, PUBLIC);
+    });
+
+    it('stops checking the other hosts once one is refused', async (t) => {
+        const held = [];
+        const lookup = t.mock.method(dns, 'lookup', (host) => (host === 'internal.example'
+            ? Promise.resolve([{ address: '10.0.0.1', family: 4 }])
+            : new Promise((resolve) => held.push(() => resolve(PUBLIC)))));
+        const hosts = ['internal.example', 'slow1.example', 'slow2.example', 'slow3.example'];
+        await assert.rejects(assertPublicUrls(hosts.map((host) => part(`https://${host}/a.png`))), /'internal.example' is not a public address/);
+        while (held.length) {
+            held.shift()();
+            await tick();
+        }
+        assert.deepEqual(lookup.mock.calls.map((call) => call.arguments[0]), hosts.slice(0, 3), 'slow3.example is never looked up');
     });
 });

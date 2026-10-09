@@ -1,6 +1,7 @@
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import { invalidRequest } from '../server/errors.js';
+import { mapLimited } from './map-limited.js';
 
 /**
  * Attachment URLs are fetched by the gateway, so a client could otherwise
@@ -23,8 +24,63 @@ const BLOCKED_V6 = new net.BlockList();
 ].forEach(([address, prefix]) => BLOCKED_V6.addSubnet(address, prefix, 'ipv6'));
 
 const LOOKUP_TIMEOUT_MS = 5000;
+/**
+ * dns.lookup runs getaddrinfo on libuv's thread pool (four threads by
+ * default, shared with file system and crypto work) and cannot be cancelled:
+ * a lookup the caller stopped waiting for keeps its thread until the resolver
+ * answers or gives up. Each lookup holds a permit until it really settles, so
+ * names that never resolve occupy at most this many threads process-wide.
+ */
+const MAX_LOOKUPS_IN_FLIGHT = 2;
 /** Most attachments one request may send as URLs. */
 export const MAX_REMOTE_PARTS = 16;
+
+let lookupsInFlight = 0;
+const lookupWaiters = new Set();
+
+/** Waits for a lookup permit; rejects with the signal's reason if it aborts first. */
+function acquireLookup(signal) {
+    if (signal.aborted) return Promise.reject(signal.reason);
+    if (lookupsInFlight < MAX_LOOKUPS_IN_FLIGHT) {
+        lookupsInFlight += 1;
+        return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+        const onAbort = () => {
+            lookupWaiters.delete(grant);
+            reject(signal.reason);
+        };
+        const grant = () => {
+            signal.removeEventListener('abort', onAbort);
+            lookupsInFlight += 1;
+            resolve();
+        };
+        lookupWaiters.add(grant);
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+}
+
+function releaseLookup() {
+    lookupsInFlight -= 1;
+    const [next] = lookupWaiters;
+    if (next) {
+        lookupWaiters.delete(next);
+        next();
+    }
+}
+
+/** Settles like `promise`, or rejects with the signal's reason once it aborts. */
+function untilAborted(promise, signal) {
+    return new Promise((resolve, reject) => {
+        const onAbort = () => reject(signal.reason);
+        if (signal.aborted) {
+            onAbort();
+            return;
+        }
+        signal.addEventListener('abort', onAbort, { once: true });
+        promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+    });
+}
 
 /** The eight 16-bit groups of a valid IPv6 address (which may end in dotted IPv4). */
 function ipv6Groups(address) {
@@ -62,30 +118,30 @@ export function isBlockedAddress(address) {
     return v4 ? BLOCKED_V4.check(v4, 'ipv4') : BLOCKED_V6.check(plain, 'ipv6');
 }
 
-async function resolve(hostname) {
+/** The addresses of `hostname`, within LOOKUP_TIMEOUT_MS (waiting for a permit included). */
+async function resolve(hostname, signal) {
     const literal = hostname.replace(/^\[|\]$/g, '');
     if (net.isIP(literal)) return [{ address: literal, family: net.isIP(literal) }];
-    let timer;
-    const timeout = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error('DNS lookup timed out')), LOOKUP_TIMEOUT_MS);
-        timer.unref();
-    });
-    try {
-        return await Promise.race([dns.lookup(literal, { all: true, verbatim: true }), timeout]);
-    } finally {
-        clearTimeout(timer);
-    }
+    const deadline = AbortSignal.any([AbortSignal.timeout(LOOKUP_TIMEOUT_MS), ...(signal ? [signal] : [])]);
+    await acquireLookup(deadline);
+    const lookup = (async () => dns.lookup(literal, { all: true, verbatim: true }))();
+    lookup.then(releaseLookup, releaseLookup);
+    return untilAborted(lookup, deadline);
 }
 
 /**
  * Every address `hostname` resolves to, provided all of them are public.
  * @param {string} hostname
- * @param {(address: string) => boolean} [isBlocked]
+ * @param {{ isBlocked?: (address: string) => boolean, signal?: AbortSignal }} [options]
+ *        `signal` stops the wait (rejecting with its reason) when the request ends
  * @returns {Promise<{ address: string, family: number }[]>}
  */
-export async function resolvePublic(hostname, isBlocked = isBlockedAddress) {
+export async function resolvePublic(hostname, { isBlocked = isBlockedAddress, signal } = {}) {
     // One message for both failures, so clients cannot probe which internal names exist.
-    const records = await resolve(hostname).catch(() => []);
+    const records = await resolve(hostname, signal).catch(() => {
+        if (signal?.aborted) throw signal.reason;
+        return [];
+    });
     if (!records.length || records.some((record) => isBlocked(record.address))) {
         throw invalidRequest(`Attachment host '${hostname}' is not a public address.`, null, 'invalid_attachment_url');
     }
@@ -96,11 +152,11 @@ export async function resolvePublic(hostname, isBlocked = isBlockedAddress) {
  * A `lookup` for http(s).request that only ever connects to the addresses it
  * has just checked, so DNS rebinding between check and connect cannot reach
  * an internal address.
- * @param {(address: string) => boolean} [isBlocked]
+ * @param {{ isBlocked?: (address: string) => boolean, signal?: AbortSignal }} [options]
  */
-export function publicLookup(isBlocked = isBlockedAddress) {
+export function publicLookup({ isBlocked = isBlockedAddress, signal } = {}) {
     return (hostname, options, callback) => {
-        resolvePublic(hostname, isBlocked).then((records) => {
+        resolvePublic(hostname, { isBlocked, signal }).then((records) => {
             const wanted = options?.family ? records.filter((record) => record.family === options.family) : records;
             if (!wanted.length) {
                 callback(Object.assign(new Error(`No IPv${options.family} address for ${hostname}`), { code: 'ENOTFOUND' }));
@@ -114,16 +170,21 @@ export function publicLookup(isBlocked = isBlockedAddress) {
 }
 
 /**
- * Reject prompt parts whose https URL resolves to a non-public address. This
- * is a fast early check; the fetch itself re-checks through publicLookup.
+ * Reject prompt parts whose https URL resolves to a non-public address, so a
+ * request fails before any download starts. The fetch itself re-checks
+ * through publicLookup.
  * @param {{ url?: string }[]} parts OpenCode prompt parts
+ * @param {{ isBlocked?: (address: string) => boolean, signal?: AbortSignal }} [options]
  */
-export async function assertPublicUrls(parts) {
+export async function assertPublicUrls(parts, { isBlocked = isBlockedAddress, signal } = {}) {
     const remote = parts.filter((part) => typeof part.url === 'string' && part.url.startsWith('https:'));
     // Checked before resolving anything, so one request cannot queue thousands of DNS lookups.
     if (remote.length > MAX_REMOTE_PARTS) {
         throw invalidRequest(`At most ${MAX_REMOTE_PARTS} attachments may be URLs; send the rest as data URIs.`, null, 'too_many_attachment_urls');
     }
-    const hosts = new Set(remote.map((part) => new URL(part.url).hostname));
-    await Promise.all([...hosts].map((hostname) => resolvePublic(hostname)));
+    const hosts = [...new Set(remote.map((part) => new URL(part.url).hostname))];
+    // Once one host is refused, the others stop waiting for a lookup permit.
+    const siblings = new AbortController();
+    const checks = AbortSignal.any([siblings.signal, ...(signal ? [signal] : [])]);
+    await mapLimited(hosts, hosts.length, (hostname) => resolvePublic(hostname, { isBlocked, signal: checks }), () => siblings.abort());
 }
