@@ -18,14 +18,15 @@ const USER_AGENT = 'zengate (+https://github.com/developingchet/zengate)';
 const attachmentError = (message) => invalidRequest(message, null, 'invalid_attachment_url');
 
 /**
- * An attachment URL as it may appear in errors and logs: signed URLs carry
- * their token in the query string, and some URLs carry credentials, so both
- * are left out.
+ * An attachment URL as it may appear in errors and logs: only its origin.
+ * Signed URLs carry their token in the query string or in a path segment,
+ * and some URLs carry credentials, so all of those are left out.
  */
 export function shown(url) {
     try {
         const parsed = new URL(url);
-        return `${parsed.origin}${parsed.pathname}${parsed.search ? '?…' : ''}`;
+        const bare = parsed.pathname === '/' && !parsed.search && !parsed.hash;
+        return `${parsed.origin}/${bare ? '' : '…'}`;
     } catch {
         return '(invalid URL)';
     }

@@ -149,13 +149,20 @@ describe('inlineRemoteAttachments', () => {
         assert.equal(hits, 0);
     });
 
-    it('keeps query strings and credentials of attachment URLs out of errors', async () => {
+    it('keeps paths, query strings and credentials of attachment URLs out of errors', async () => {
         await assert.rejects(inline([filePart('/missing.png?X-Amz-Signature=secret-token')]), (error) => {
-            assert.match(error.message, /\/missing\.png\?… returned HTTP 404/);
-            assert.doesNotMatch(error.message, /secret-token/);
+            assert.equal(error.message, `Attachment https://files.test:${port}/… returned HTTP 404.`);
             return true;
         });
-        assert.equal(shown('https://user:pass@files.test/a.png?sig=1#frag'), 'https://files.test/a.png?…');
+        await assert.rejects(inline([filePart('/share/path-token-5f0c2e/cat.png')]), (error) => {
+            assert.match(error.message, /returned HTTP 404/);
+            assert.doesNotMatch(error.message, /path-token|share|cat\.png/);
+            return true;
+        });
+        assert.equal(shown('https://user:pass@files.test/a.png?sig=1#frag'), 'https://files.test/…');
+        assert.equal(shown('https://files.test/s/path-token-5f0c2e'), 'https://files.test/…');
+        assert.equal(shown('https://files.test/?sig=1'), 'https://files.test/…');
+        assert.equal(shown('https://files.test:8443/'), 'https://files.test:8443/');
         assert.equal(shown('not a url'), '(invalid URL)');
     });
 
