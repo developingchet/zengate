@@ -7,6 +7,12 @@ updates:
     groups:
       npm:
         patterns: ['*']
+    # Let a new OpenCode release age for a week before it is proposed, so a bad
+    # one is usually caught upstream first. Run `npm run test:leak` on the PR.
+    cooldown:
+      default-days: 7
+      include:
+        - '@opencode/cli'
     commit-message:
       prefix: chore
   - package-ecosystem: github-actions
