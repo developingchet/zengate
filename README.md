@@ -254,7 +254,7 @@ Set values as environment variables or in the config file (same names; see [`con
 - Sessions are created with every action set to `ask`, and the gateway rejects each request, as it does with OpenCode 1.
 - `response_format` is passed to the model as an instruction, because OpenCode 2 has no native structured output. The JSON arrives when the answer is complete rather than streamed.
 - `OPENCODE_AGENT` applies only if the server has an agent of that name; otherwise the session keeps its default agent.
-- OpenCode 2 has an `execute` tool that runs short scripts the model writes and never asks permission. In 2.0.32 the only tools it can reach are browser tools, which need a desktop app attached to the session and fail otherwise, and the gateway also denies the `browser` action. Shell, file, web and subagent tools all ask and are rejected. A later OpenCode 2 release could widen what `execute` reaches, so after upgrading it, run `npm run test:leak`: it asks a model to use every tool in a session with the gateway's permissions and fails if any ran.
+- OpenCode 2 has an `execute` tool that runs short scripts the model writes. The tool has no permission of its own, but each tool a script calls is checked like a direct call: in 2.0.32 it can reach the MCP resource reader, which asks and is rejected, and browser tools, which the gateway denies (they also need a desktop app attached to the session). Shell, file, web and subagent tools all ask and are rejected. A later OpenCode 2 release could add a tool that skips this, so after upgrading it, run `npm run test:leak`: it asks a model to use every tool in a session with the gateway's permissions and fails if any ran.
 
 ## Deployment
 

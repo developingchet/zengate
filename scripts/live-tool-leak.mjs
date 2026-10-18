@@ -5,7 +5,7 @@
 // request as the gateway does, and fails if any tool call succeeded.
 //   npm run test:leak            (OPENCODE_PATH=... to test another binary, MODEL=... to pick a model)
 // Exit codes: 0 no tool ran, 1 a tool ran, 2 inconclusive (the model never tried a tool).
-// Run it again after upgrading OpenCode 2: its `execute` tool never asks permission.
+// Run it again after upgrading OpenCode 2: a new tool, or a new way for `execute` to reach one, could skip the permission check.
 import { randomBytes } from 'node:crypto';
 import { createManagedBackend } from '../src/opencode/backend.js';
 import { TOOL_REJECTION_MESSAGE } from '../src/opencode/events.js';

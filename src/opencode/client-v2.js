@@ -8,8 +8,12 @@ const AGENTS_CACHE_MS = 60000;
 // OpenCode 2 caps an instruction entry at 256 KiB; stay under it.
 const MAX_INSTRUCTION_BYTES = 200 * 1024;
 const SYSTEM_ENTRY = 'gateway';
-// Every action asks (the gateway rejects each request). Browser tools are denied
-// outright: they only work through a desktop app attached to the session.
+// Every action asks (the gateway rejects each request; an ask nobody answers
+// blocks the tool, it never runs). Tools reached through the `execute` code tool
+// are checked under their own action too. Browser tools are denied outright:
+// they only work through a desktop app attached to the session. Denying more
+// than that is deliberately avoided: a deny-all ruleset makes Zen's free tier
+// refuse every request, so the tools stay offered and are rejected when asked.
 const SESSION_PERMISSIONS = Object.freeze([
     { action: '*', resource: '*', effect: 'ask' },
     { action: 'browser', resource: '*', effect: 'deny' },
