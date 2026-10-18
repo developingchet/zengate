@@ -16,6 +16,7 @@ Closes #
 - [ ] `npm run lint`
 - [ ] `npm test`
 - [ ] Tested against real models with `npm run test:live` (if behaviour changed)
+- [ ] `npm run test:leak` (if `@opencode/cli` or the OpenCode client changed; CI does not run it, and OpenCode 2's `execute` tool never asks permission)
 
 ## Checklist
 
