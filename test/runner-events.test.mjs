@@ -322,6 +322,7 @@ function hubSetup({ ownsAllSessions = false, pendingPermissions = async () => []
         rejectQuestion: rejectQuestion || (async (id) => { log.questions.push(id); }),
         pendingPermissions,
         pendingQuestions,
+        adaptEvent: (event) => [event],
     };
     const logger = createLogger({ level: 'warn', sink: { out: () => {}, err: (line) => log.warnings.push(line) } });
     const hub = createEventHub({ getClient: () => client, logger, ownsAllSessions });

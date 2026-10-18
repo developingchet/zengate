@@ -18,7 +18,7 @@ async function* readChunks(reader) {
 }
 
 /**
- * One shared subscription to the backend's /event stream, fanned out to
+ * One shared subscription to the backend's event stream, fanned out to
  * per-session listeners. It also enforces the gateway's security policy:
  * every OpenCode tool permission request and question from a gateway session
  * is rejected, so no command, file edit or fetch ever runs on the host.
@@ -54,7 +54,7 @@ export function createEventHub({ getClient, logger, ownsAllSessions }) {
 
     async function rejectPermission(id, sessionId) {
         try {
-            await getClient().replyPermission(id, 'reject', TOOL_REJECTION_MESSAGE);
+            await getClient().replyPermission(id, 'reject', TOOL_REJECTION_MESSAGE, sessionId);
             toolRejections += 1;
             logger.debug('Rejected OpenCode tool permission', { sessionId });
         } catch (error) {
@@ -65,7 +65,7 @@ export function createEventHub({ getClient, logger, ownsAllSessions }) {
 
     async function rejectQuestion(id, sessionId) {
         try {
-            await getClient().rejectQuestion(id);
+            await getClient().rejectQuestion(id, sessionId);
         } catch (error) {
             if (alreadyAnswered(error)) logger.debug('OpenCode question was already answered', { sessionId });
             else logger.warn('Failed to reject an OpenCode question', { sessionId, error: error.message });
@@ -112,7 +112,8 @@ export function createEventHub({ getClient, logger, ownsAllSessions }) {
         while (!stopped) {
             controller = new AbortController();
             try {
-                const response = await getClient().openEvents(controller.signal);
+                const client = getClient();
+                const response = await client.openEvents(controller.signal);
                 // fetch() can drop its abort link once its Request is garbage
                 // collected, so stop() also cancels the body directly.
                 const reader = response.body.getReader();
@@ -123,7 +124,7 @@ export function createEventHub({ getClient, logger, ownsAllSessions }) {
                 for await (const frame of readSseFrames(readChunks(reader))) {
                     let event;
                     try { event = JSON.parse(frame.data); } catch { continue; }
-                    if (event && typeof event.type === 'string') dispatch(event);
+                    if (event && typeof event.type === 'string') client.adaptEvent(event).forEach(dispatch);
                 }
                 if (!stopped) logger.warn('OpenCode event stream ended; reconnecting');
             } catch (error) {

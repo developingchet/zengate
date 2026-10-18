@@ -30,6 +30,8 @@ npm run audit
 
 `npm run test:live` runs an end-to-end check against real Zen models through a running gateway (`GATEWAY_URL` and `API_KEY` must be set). It is not part of CI.
 
+`npm run test:leak` starts an isolated OpenCode 2 backend, asks a real model to use every tool and fails if any ran. It is not part of CI either, so run it before merging any change to `@opencode/cli`, including Dependabot upgrades: a new release could add a tool, or a way for one to reach the network or a shell, that skips the permission check.
+
 ## Guidelines
 
 - Keep the design goals in mind: easy to set up, secure by default, fast, and faithful to the OpenAI API.
@@ -49,11 +51,11 @@ npm run audit
 
 ## Dependencies
 
-zengate keeps its dependency list small on purpose: Express, and the official `opencode-ai` package. Prefer the Node.js standard library, and discuss a new dependency in an issue before opening the pull request.
+zengate keeps its dependency list small on purpose: Express, and the official `@opencode/cli` package. Prefer the Node.js standard library, and discuss a new dependency in an issue before opening the pull request.
 
 - Every `npm ci` in CI goes through [Socket Firewall](https://docs.socket.dev/docs/socket-firewall-free), which blocks known-malicious packages, and the `socket` workflow scans dependency changes in pull requests against the Socket security policy.
 - `package.json` `overrides` swap a few polyfills in Express's dependency tree for their maintained [`@socketregistry`](https://github.com/SocketDev/socket-registry) equivalents. Keep them when updating Express, and remove any that no longer match a package in the tree.
-- Dependabot opens weekly update pull requests for npm, GitHub Actions and the Docker base image.
+- Dependabot opens weekly update pull requests for npm, GitHub Actions and the Docker base image. A new `@opencode/cli` release is only proposed after it is a week old.
 
 ## Maintainers
 

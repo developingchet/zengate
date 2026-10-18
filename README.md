@@ -241,13 +241,20 @@ Set values as environment variables or in the config file (same names; see [`con
 | `TRUST_PROXY` | `0` | Number of reverse-proxy hops to trust for client IPs. |
 | `LOG_LEVEL` / `LOG_JSON` | `info` / `false` | Log verbosity, and JSON-lines output. |
 | `OPENCODE_AGENT` | `plan` | The OpenCode agent each session uses. |
-| `OPENCODE_PATH` | bundled | Use a different `opencode` binary. |
+| `OPENCODE_PATH` | bundled | Use a different `opencode` binary, OpenCode 1 or 2. |
 | `OPENCODE_SERVER_URL` | none | Attach to an existing `opencode serve` instead of starting one (see below). |
 | `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD` | `opencode` / none | Basic auth for that server. Credentials inside `OPENCODE_SERVER_URL` are refused. |
 | `ALLOW_INSECURE_BACKEND_HTTP` | `false` | Allow a non-loopback `http://` server URL. |
 | `CONFIG_FILE` | see [First start](#first-start) | Where the config file lives (environment variable only). |
 
-**Attach mode.** `OPENCODE_SERVER_URL` uses a server you run yourself. The gateway can only reject tool calls that server *asks* permission for; that happens in its own sessions and their subagents. It trusts the server's own permission config, plugins and MCP servers. If that config allows tools without asking, they will run. Use it only with a server configured like the managed one: every permission set to `"ask"`, and `experimental.continue_loop_on_deny` set to `true` so a rejected tool does not end the turn with an empty reply. The managed default is safer. Remote servers must use `https://` unless you set `ALLOW_INSECURE_BACKEND_HTTP`.
+**Attach mode.** `OPENCODE_SERVER_URL` uses a server you run yourself. The gateway can only reject tool calls that server *asks* permission for; that happens in its own sessions and their subagents. It trusts the server's own permission config, plugins and MCP servers. If that config allows tools without asking, they will run. On OpenCode 2 this includes "always allow" rules saved for the server's project, which apply after the gateway's session rules and win over them; the `execute` tool and its `fetch` are reachable unless the server denies that action. Use it only with a server configured like the managed one: every permission set to `"ask"`, and `experimental.continue_loop_on_deny` set to `true` so a rejected tool does not end the turn with an empty reply. The managed default is safer. Remote servers must use `https://` unless you set `ALLOW_INSECURE_BACKEND_HTTP`.
+
+**OpenCode versions.** The bundled backend is OpenCode 2 (the `@opencode/cli` package). The gateway also works with OpenCode 1 and tells the two apart by how the backend answers, whether it starts a binary (`OPENCODE_PATH`) or attaches to a server (`OPENCODE_SERVER_URL`). With OpenCode 2:
+
+- Sessions are created with every action set to `ask`, and the gateway rejects each request, as it does with OpenCode 1.
+- `response_format` is passed to the model as an instruction, because OpenCode 2 has no native structured output. The JSON arrives when the answer is complete rather than streamed.
+- `OPENCODE_AGENT` applies only if the server has an agent of that name; otherwise the session keeps its default agent.
+- OpenCode 2 has an `execute` tool that runs scripts the model writes inside the OpenCode process. Scripts can call `fetch` on any URL without a permission request, so the gateway denies the `execute` action and the tool is not offered to the model. Browser tools are denied too (they also need a desktop app attached to the session). Every other tool, including shell, file, web and subagent tools, asks and is rejected. A later OpenCode 2 release could add a way around this, so after upgrading it, run `npm run test:leak`: it asks a model to use every tool, and to fetch a local listener, in a session with the gateway's permissions, and fails if anything ran.
 
 ## Deployment
 

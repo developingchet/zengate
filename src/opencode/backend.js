@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { backendOrigin, createOpencodeClient } from './client.js';
+import { probeBackend } from './detect.js';
 import { resolveOpencodeBinary, spawnCommand } from './binary.js';
 import {
     backendEnv, createIsolatedRoot, HEARTBEAT_MS, randomPassword, recordBackendPid, removeIsolatedRoot, sweepStaleRoots, touchIsolatedRoot,
@@ -55,13 +56,14 @@ function killTree(child) {
     }, 3000).unref();
 }
 
-async function waitHealthy(client, deadline, isDead) {
+/** Wait until the backend answers, and learn which API generation it speaks. */
+async function waitHealthy(options, deadline, isDead) {
     let lastError = null;
     while (Date.now() < deadline) {
         if (isDead()) throw new Error('OpenCode exited during startup');
         try {
-            const health = await client.health();
-            if (health?.healthy === true) return health;
+            const found = await probeBackend(options);
+            if (found) return found;
         } catch (error) {
             lastError = error;
         }
@@ -129,14 +131,14 @@ export function createManagedBackend({ opencodePath, logger }) {
             if (!stopping && served) onCrash(signal || code, root);
         });
         const port = await boundPort(proc, START_TIMEOUT_MS);
-        const candidate = createOpencodeClient({ baseUrl: `http://127.0.0.1:${port}`, username: 'opencode', password });
-        const health = await waitHealthy(candidate, deadline, () => dead);
-        client = candidate;
-        version = health.version || null;
+        const found = await waitHealthy({ baseUrl: `http://127.0.0.1:${port}`, username: 'opencode', password }, deadline, () => dead);
+        client = found.client;
+        version = found.health.version || null;
         ready = true;
         served = true;
         restartDelay = 1000;
         logger.info(`OpenCode ${version || ''} backend ready (managed, isolated, tools disabled)`.replace('  ', ' '));
+        logger.debug(`OpenCode speaks the ${client.api} API`);
     }
 
     /** Kill the current backend, if any, and wait (briefly) until it is gone. */
@@ -226,27 +228,35 @@ export function createManagedBackend({ opencodePath, logger }) {
 
 /** Uses an OpenCode server someone else runs (OPENCODE_SERVER_URL). */
 export function createAttachedBackend({ url, username, password, logger }) {
-    const client = createOpencodeClient({ baseUrl: url, username, password });
+    // Until the server has been probed its API generation is unknown; OpenCode 1 is the default.
+    let client = createOpencodeClient({ baseUrl: url, username, password });
     const shownUrl = backendOrigin(url);
     let ready = false;
     let version = null;
     let timer = null;
 
     async function probe() {
-        try {
-            const health = await client.health();
-            ready = health?.healthy === true;
-            version = health?.version || version;
-        } catch {
-            ready = false;
+        let health = await client.health().catch(() => null);
+        if (health?.healthy !== true) {
+            // First contact, or the server was replaced by another OpenCode generation.
+            health = await probeBackend({ baseUrl: url, username, password }).then(
+                (found) => {
+                    if (found && found.client.api !== client.api) logger.debug(`OpenCode speaks the ${found.client.api} API`);
+                    if (found) client = found.client;
+                    return found?.health;
+                },
+                () => null,
+            );
         }
+        ready = health?.healthy === true;
+        version = health?.version || version;
         return ready;
     }
 
     return Object.freeze({
         mode: 'attached',
         async start() {
-            if (!(await probe())) throw new Error(`OpenCode server at ${shownUrl} is not healthy (GET /global/health). Check the URL and credentials.`);
+            if (!(await probe())) throw new Error(`OpenCode server at ${shownUrl} is not healthy (GET /global/health or /api/info). Check the URL and credentials.`);
             logger.info(`Using OpenCode ${version || ''} at ${shownUrl}`.replace('  ', ' '));
             logger.warn('Attached mode: the gateway rejects tool permissions for its own sessions, but the server\'s own configuration still applies. Prefer the managed backend.');
             timer = setInterval(probe, 10000);
