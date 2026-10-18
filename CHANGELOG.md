@@ -4,11 +4,18 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-18
+
 ### Added
 - Support for OpenCode 2. The gateway detects which API the backend speaks, so `OPENCODE_PATH` and `OPENCODE_SERVER_URL` work with OpenCode 1 and 2.
+- `npm run test:leak` starts an isolated OpenCode 2 backend, asks a model to use every tool and to fetch a local listener, and fails if any tool ran or the listener was hit. Run it after upgrading `@opencode/cli`.
 
 ### Changed
 - The bundled backend is OpenCode 2: `opencode-ai` 1.18.34 is replaced by `@opencode/cli` 2.0.32. Point `OPENCODE_PATH` at an OpenCode 1 binary to keep using it.
+- Express is updated to 5.3.0.
+- Dependabot waits seven days before proposing a new `@opencode/cli` release, and CI verifies npm registry signatures.
+
+### Security
 - Sessions deny the `execute` and `browser` actions on OpenCode 2. The `execute` tool runs scripts whose `fetch` reaches any URL without a permission request, so it is no longer offered to the model.
 
 ## [1.2.0] - 2026-10-09
@@ -133,7 +140,8 @@ First public release (npm only).
 - Stored responses are scoped to the API key that created them.
 - Concurrency slots are weighted by `n` and always released on timeout or disconnect. A request fails fast when the upstream keeps failing.
 
-[Unreleased]: https://github.com/developingchet/zengate/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/developingchet/zengate/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/developingchet/zengate/releases/tag/v1.3.0
 [1.2.0]: https://github.com/developingchet/zengate/releases/tag/v1.2.0
 [1.1.1]: https://github.com/developingchet/zengate/releases/tag/v1.1.1
 [1.1.0]: https://github.com/developingchet/zengate/releases/tag/v1.1.0
