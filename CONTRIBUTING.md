@@ -49,7 +49,7 @@ npm run audit
 
 ## Dependencies
 
-zengate keeps its dependency list small on purpose: Express, and the official `opencode-ai` package. Prefer the Node.js standard library, and discuss a new dependency in an issue before opening the pull request.
+zengate keeps its dependency list small on purpose: Express, and the official `@opencode/cli` package. Prefer the Node.js standard library, and discuss a new dependency in an issue before opening the pull request.
 
 - Every `npm ci` in CI goes through [Socket Firewall](https://docs.socket.dev/docs/socket-firewall-free), which blocks known-malicious packages, and the `socket` workflow scans dependency changes in pull requests against the Socket security policy.
 - `package.json` `overrides` swap a few polyfills in Express's dependency tree for their maintained [`@socketregistry`](https://github.com/SocketDev/socket-registry) equivalents. Keep them when updating Express, and remove any that no longer match a package in the tree.

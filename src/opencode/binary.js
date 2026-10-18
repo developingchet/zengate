@@ -12,10 +12,10 @@ function isFile(file) {
     }
 }
 
-/** The binary shipped by the official `opencode-ai` npm package (a dependency). */
+/** The binary shipped by the official `@opencode/cli` npm package (a dependency). */
 function bundledBinary() {
     try {
-        const root = path.dirname(require.resolve('opencode-ai/package.json'));
+        const root = path.dirname(require.resolve('@opencode/cli/package.json'));
         const binary = path.join(root, 'bin', 'opencode.exe');
         return isFile(binary) ? binary : null;
     } catch {
@@ -35,7 +35,7 @@ function searchPath(names) {
 
 /**
  * Locate the OpenCode CLI: explicit OPENCODE_PATH, then the bundled
- * `opencode-ai` package, then PATH. Never guesses other directories.
+ * `@opencode/cli` package, then PATH. Never guesses other directories.
  * @param {string} configured OPENCODE_PATH ('' for automatic)
  * @returns {{ path: string, source: 'config'|'bundled'|'PATH' }}
  */
@@ -57,7 +57,7 @@ export function resolveOpencodeBinary(configured) {
     if (bundled) return { path: bundled, source: 'bundled' };
     const found = searchPath(process.platform === 'win32' ? windowsNames : ['opencode']);
     if (found) return { path: found, source: 'PATH' };
-    throw new Error('OpenCode CLI not found. Run `npm ci` (it installs the bundled opencode-ai package) or set OPENCODE_PATH.');
+    throw new Error('OpenCode CLI not found. Run `npm ci` (it installs the bundled @opencode/cli package) or set OPENCODE_PATH.');
 }
 
 /**

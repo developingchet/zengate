@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- Support for OpenCode 2. The gateway detects which API the backend speaks, so `OPENCODE_PATH` and `OPENCODE_SERVER_URL` work with OpenCode 1 and 2.
+
+### Changed
+- The bundled backend is OpenCode 2: `opencode-ai` 1.18.34 is replaced by `@opencode/cli` 2.0.32. Point `OPENCODE_PATH` at an OpenCode 1 binary to keep using it.
+- Sessions deny the `browser` action, which OpenCode 2 would otherwise leave to its `execute` tool.
+
 ## [1.2.0] - 2026-10-09
 
 ### Added

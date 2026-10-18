@@ -32,6 +32,7 @@
     "test": "node --test \"test/**/*.test.mjs\" \"test/**/*.test.js\"",
     "test:coverage": "node --test --experimental-test-coverage \"test/**/*.test.mjs\" \"test/**/*.test.js\"",
     "test:live": "node scripts/live-e2e.mjs",
+    "test:leak": "node scripts/live-tool-leak.mjs",
     "verify": "npm run lint && npm test",
     "audit": "npm audit --omit=dev --audit-level=high"
   },
@@ -51,8 +52,8 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "express": "^5.1.0",
-    "opencode-ai": "1.18.34"
+    "@opencode/cli": "2.0.32",
+    "express": "^5.1.0"
   },
   "overrides": {
     "es-define-property": "npm:@socketregistry/es-define-property@^1",

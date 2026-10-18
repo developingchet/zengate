@@ -81,7 +81,7 @@ describe('attached backend', () => {
         for (const url of [`http://opencode:s3cret-pw@127.0.0.1:${port}`, `${fake.url}/s3cret-prefix`]) {
             const backend = createAttachedBackend({ url, username: 'opencode', password: '', logger });
             await assert.rejects(backend.start(), (error) => {
-                assert.equal(error.message, `OpenCode server at http://127.0.0.1:${port} is not healthy (GET /global/health). Check the URL and credentials.`);
+                assert.equal(error.message, `OpenCode server at http://127.0.0.1:${port} is not healthy (GET /global/health or /api/info). Check the URL and credentials.`);
                 return true;
             });
         }
