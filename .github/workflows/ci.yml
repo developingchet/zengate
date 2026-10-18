@@ -87,7 +87,7 @@ jobs:
           docker run --rm zengate:ci node index.js --version
           docker run -d --name zengate -p 127.0.0.1:8083:8083 zengate:ci
           for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8083/health; then echo; docker rm -f zengate; exit 0; fi
+            if curl -fsS http://127.0.0.1:8083/ready; then echo; docker rm -f zengate; exit 0; fi
             sleep 2
           done
           docker logs zengate
