@@ -9,13 +9,15 @@ const AGENTS_CACHE_MS = 60000;
 const MAX_INSTRUCTION_BYTES = 200 * 1024;
 const SYSTEM_ENTRY = 'gateway';
 // Every action asks (the gateway rejects each request; an ask nobody answers
-// blocks the tool, it never runs). Tools reached through the `execute` code tool
-// are checked under their own action too. Browser tools are denied outright:
-// they only work through a desktop app attached to the session. Denying more
-// than that is deliberately avoided: a deny-all ruleset makes Zen's free tier
-// refuse every request, so the tools stay offered and are rejected when asked.
+// blocks the tool, it never runs). Two actions are denied outright:
+// - `execute`: the code-mode tool runs scripts in the OpenCode process, and
+//   their built-in `fetch` reaches any URL without a permission request.
+//   Denying it with resource `*` removes the tool from the model's list.
+// - `browser`: browser tools only work through a desktop app attached to the session.
+// A deny-all ruleset is avoided: it makes Zen's free tier refuse every request.
 const SESSION_PERMISSIONS = Object.freeze([
     { action: '*', resource: '*', effect: 'ask' },
+    { action: 'execute', resource: '*', effect: 'deny' },
     { action: 'browser', resource: '*', effect: 'deny' },
 ]);
 
@@ -74,8 +76,8 @@ export function createOpencodeClientV2(options) {
     let agentsCache = null;
 
     /**
-     * OpenCode 2 answers routes it does not have with its web app (HTTP 200,
-     * HTML), which would pass for an empty success. Every real reply is JSON.
+     * OpenCode 2 answers paths outside /api with its web app (HTTP 200, HTML),
+     * which would pass for an empty success. Every real reply is JSON.
      */
     async function call(method, path, requestOptions) {
         const body = await request(method, path, requestOptions);
@@ -105,7 +107,8 @@ export function createOpencodeClientV2(options) {
         const seen = new Set();
         let cursor = null;
         for (let page = 0; page < MAX_PAGES; page += 1) {
-            const query = new URLSearchParams({ limit: String(limit), order, ...(cursor ? { cursor } : {}) });
+            // The cursor carries the order; the server rejects the two together.
+            const query = new URLSearchParams({ limit: String(limit), ...(cursor ? { cursor } : { order }) });
             const body = await call('GET', `/api/session/${id(sessionId)}/message?${query}`, { signal });
             const batch = (body?.data || []).filter((item) => item?.id && !seen.has(item.id));
             for (const item of batch) seen.add(item.id);

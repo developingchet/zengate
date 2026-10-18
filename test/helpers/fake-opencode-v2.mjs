@@ -67,11 +67,17 @@ export async function startFakeOpencodeV2() {
                 polls += 1;
                 const finished = polls > state.pollsBeforeIdle;
                 const ending = state.noAnswer ? [{ id: 'msg_i1', type: 'idle', outcome: state.noAnswer }] : [state.assistant, { id: 'msg_i1', type: 'idle', outcome: 'succeeded' }];
+                // The real server refuses a cursor together with an order.
+                if (url.searchParams.has('cursor') && url.searchParams.has('order')) return json(400, { message: 'Cursor cannot be combined with order' });
+                const fillers = Array.from({ length: state.fillers ?? 0 }, (_, index) => ({ id: `msg_f${index}`, type: 'user', text: '' }));
                 const items = [
                     { id: 'msg_u1', type: 'user', text: 'prompt text' },
-                    ...(finished ? ending : []),
+                    ...(finished ? [...fillers, ...ending] : []),
                 ];
-                return json(200, { data: items, cursor: {} });
+                const limit = Number(url.searchParams.get('limit')) || items.length;
+                const start = Number(url.searchParams.get('cursor')) || 0;
+                const next = start + limit < items.length ? String(start + limit) : undefined;
+                return json(200, { data: items.slice(start, start + limit), cursor: next ? { next } : {} });
             }
             case 'GET /api/session/:id/message/:id': return json(200, { data: state.assistant });
             case 'GET /api/permission/request': return json(200, { data: [{ id: 'per_1', sessionID: 'ses_1' }] });

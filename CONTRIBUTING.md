@@ -30,7 +30,7 @@ npm run audit
 
 `npm run test:live` runs an end-to-end check against real Zen models through a running gateway (`GATEWAY_URL` and `API_KEY` must be set). It is not part of CI.
 
-`npm run test:leak` starts an isolated OpenCode 2 backend, asks a real model to use every tool and fails if any ran. It is not part of CI either, so run it before merging any change to `@opencode/cli`, including Dependabot upgrades: OpenCode 2's `execute` tool runs scripts that call other tools, and a new release could add a tool that skips the permission check.
+`npm run test:leak` starts an isolated OpenCode 2 backend, asks a real model to use every tool and fails if any ran. It is not part of CI either, so run it before merging any change to `@opencode/cli`, including Dependabot upgrades: a new release could add a tool, or a way for one to reach the network or a shell, that skips the permission check.
 
 ## Guidelines
 

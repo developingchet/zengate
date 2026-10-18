@@ -9,7 +9,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 - The bundled backend is OpenCode 2: `opencode-ai` 1.18.34 is replaced by `@opencode/cli` 2.0.32. Point `OPENCODE_PATH` at an OpenCode 1 binary to keep using it.
-- Sessions deny the `browser` action, which OpenCode 2 reaches through its `execute` tool.
+- Sessions deny the `execute` and `browser` actions on OpenCode 2. The `execute` tool runs scripts whose `fetch` reaches any URL without a permission request, so it is no longer offered to the model.
 
 ## [1.2.0] - 2026-10-09
 

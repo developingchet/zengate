@@ -59,12 +59,13 @@ describe('OpenCode 2 client', () => {
         assert.equal(model.contextWindow, 200000);
     });
 
-    it('creates sessions that ask before every action, so tools stay offered but never run', async () => {
+    it('creates sessions that ask before every action and deny execute and browser outright', async () => {
         const session = await client.createSession();
         assert.match(session.id, /^ses_/);
         const call = callsTo('POST', '/api/session').find((entry) => entry.path === '/api/session');
         assert.deepEqual(call.body.permissions, [
             { action: '*', resource: '*', effect: 'ask' },
+            { action: 'execute', resource: '*', effect: 'deny' },
             { action: 'browser', resource: '*', effect: 'deny' },
         ]);
     });
@@ -229,6 +230,22 @@ describe('OpenCode 2 client', () => {
         const all = await client.messages('ses_1');
         assert.deepEqual(all.map((message) => message.info.role), ['user', 'assistant']);
         assert.equal((await client.message('ses_1', 'msg_a1')).info.id, 'msg_a1');
+    });
+
+    it('follows the cursor across pages without resending the order', async () => {
+        fake.state.fillers = 450;
+        try {
+            fake.calls.length = 0;
+            const all = await client.messages('ses_1');
+            assert.equal(all.length, 452);
+            assert.equal(all.at(-1).info.id, 'msg_a1');
+            const pages = fake.calls.filter((call) => call.method === 'GET' && call.path === '/api/session/ses_1/message');
+            assert.equal(pages.length, 3);
+            assert.match(pages[0].query, /order=asc/);
+            assert.ok(pages.slice(1).every((call) => call.query.includes('cursor=') && !call.query.includes('order=')));
+        } finally {
+            fake.state.fillers = 0;
+        }
     });
 });
 

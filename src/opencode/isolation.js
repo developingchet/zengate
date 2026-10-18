@@ -236,10 +236,11 @@ export function backendEnv(dirs, password) {
         OPENCODE_SERVER_PASSWORD: password,
         OPENCODE_CONFIG_CONTENT: JSON.stringify(backendConfig()),
         OPENCODE_DISABLE_AUTOUPDATE: '1',
-        OPENCODE_DISABLE_SHARE: '1',
-        OPENCODE_DISABLE_LSP_DOWNLOAD: '1',
         OPENCODE_DISABLE_PROJECT_CONFIG: '1',
         OPENCODE_DISABLE_CLAUDE_CODE: '1',
+        // OpenCode 1 switches; OpenCode 2 ignores them.
+        OPENCODE_DISABLE_SHARE: '1',
+        OPENCODE_DISABLE_LSP_DOWNLOAD: '1',
         OPENCODE_DISABLE_EXTERNAL_SKILLS: '1',
         OPENCODE_DISABLE_DEFAULT_PLUGINS: '1',
         OPENCODE_DISABLE_EMBEDDED_WEB_UI: '1',
