@@ -68,6 +68,8 @@ docker exec zengate node index.js setup --show   # prints the generated key
 
 Images are published for `linux/amd64` and `linux/arm64`, tagged `latest`, `1`, `1.2` and `1.2.3`.
 
+The same image is on GitHub Container Registry as `ghcr.io/developingchet/zengate`, and the npm package is on GitHub Packages as `@developingchet/zengate`. Installing from GitHub Packages needs a GitHub token, so npmjs.com and Docker Hub remain the simplest sources.
+
 **Docker Compose**
 
 ```yaml
