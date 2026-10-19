@@ -221,7 +221,7 @@ jobs:
           npm publish --tag "$tag"
 
   github-release:
-    needs: [docker, npm, github-packages]
+    needs: [docker, npm]
     runs-on: ubuntu-latest
     permissions:
       contents: write
