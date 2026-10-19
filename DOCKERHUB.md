@@ -11,6 +11,8 @@ docker run -d --name zengate -p 127.0.0.1:8083:8083 -v zengate:/data developingc
 docker exec zengate node index.js setup --show   # prints the generated API key
 ```
 
+The same image, with the same tags and digest, is also published as `ghcr.io/developingchet/zengate`.
+
 Then use `http://127.0.0.1:8083/v1` as the OpenAI base URL and the `sk-zg-...` key as the API key:
 
 ```bash

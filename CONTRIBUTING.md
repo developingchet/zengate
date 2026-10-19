@@ -72,7 +72,7 @@ zengate keeps its dependency list small on purpose: Express, and the official `@
    git push origin vX.Y.Z
    ```
 
-The `release` workflow then checks that the tag matches `package.json`, runs the tests, publishes the Docker image (amd64 + arm64, scanned, signed, with an SBOM), publishes to npm with provenance, and creates the GitHub release. A tag with a suffix such as `v1.3.0-rc.1` is published as a pre-release (npm tag `next`, no `latest` Docker tag).
+The `release` workflow then checks that the tag matches `package.json`, runs the tests, publishes the Docker image to Docker Hub and GHCR (amd64 + arm64, scanned, signed, with an SBOM), publishes to npm with provenance and to GitHub Packages as `@developingchet/zengate`, and creates the GitHub release. A tag with a suffix such as `v1.3.0-rc.1` is published as a pre-release (npm tag `next`, no `latest` Docker tag).
 
 ## License
 
