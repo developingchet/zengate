@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-10-19
+
+### Added
+- Releases are also published to GitHub: the image as `ghcr.io/developingchet/zengate` (same digest as Docker Hub, signed and SBOM-attested there too) and the npm package as `@developingchet/zengate` on GitHub Packages.
+
 ## [1.3.0] - 2026-10-18
 
 ### Added
@@ -140,7 +145,8 @@ First public release (npm only).
 - Stored responses are scoped to the API key that created them.
 - Concurrency slots are weighted by `n` and always released on timeout or disconnect. A request fails fast when the upstream keeps failing.
 
-[Unreleased]: https://github.com/developingchet/zengate/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/developingchet/zengate/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/developingchet/zengate/releases/tag/v1.3.1
 [1.3.0]: https://github.com/developingchet/zengate/releases/tag/v1.3.0
 [1.2.0]: https://github.com/developingchet/zengate/releases/tag/v1.2.0
 [1.1.1]: https://github.com/developingchet/zengate/releases/tag/v1.1.1
