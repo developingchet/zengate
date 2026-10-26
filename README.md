@@ -273,6 +273,8 @@ The default `compatible` profile retains stock OpenCode context for provider com
 
 From a source checkout, `npm run test:backend-contract` checks both profiles with the real bundled CLI and a local dummy provider using synthetic credentials. It captures every provider request, asserts strict input contains no workspace/environment context or tools, and forces a valid shell call: compatibility mode must reject it, while strict mode must neither execute it nor make another provider call. It also tests ordinary strict-chat output. These are deterministic backend contract tests, not real Zen evidence. Startup may refresh OpenCode's public model catalog; fixture inference is restricted to the local provider. `npm run test:leak` remains the real-model tool-attempt check.
 
+Contract tests ignore `OPENCODE_PATH`, require the installed bundled CLI and launch its native executable directly without a command interpreter. Use the live test runners when deliberately evaluating an alternative `OPENCODE_PATH` runtime.
+
 ## Deployment
 
 **Windows ports.** Windows can reserve TCP ranges that include 8083 or 8190. An `EACCES` bind error now identifies the host/port and suggests checking `netsh interface ipv4 show excludedportrange protocol=tcp`. Choose an available port in `PORT` (for example 9083); no port is guaranteed available on every host. The default stays 8083 so existing client and container configurations continue to work.

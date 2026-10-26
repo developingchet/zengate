@@ -23,6 +23,13 @@ function bundledBinary() {
     }
 }
 
+/** Contract tests must execute the installed dependency, with no environment/PATH fallback. */
+export function resolveBundledOpencodeBinary() {
+    const binary = bundledBinary();
+    if (!binary) throw new Error('Bundled OpenCode CLI not found. Run `npm ci`; contract tests do not use OPENCODE_PATH or PATH.');
+    return { path: binary, source: 'bundled' };
+}
+
 function searchPath(names) {
     for (const dir of (process.env.PATH || process.env.Path || '').split(path.delimiter).filter(Boolean)) {
         for (const name of names) {

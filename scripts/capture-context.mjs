@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { resolveOpencodeBinary, spawnCommand } from '../src/opencode/binary.js';
+import { resolveBundledOpencodeBinary } from '../src/opencode/binary.js';
 import { backendEnv, createIsolatedRoot, removeIsolatedRoot } from '../src/opencode/isolation.js';
 import { createOpencodeClientV2 } from '../src/opencode/client-v2.js';
 import { installChatProfile } from '../src/opencode/chat-profile.js';
@@ -62,9 +62,8 @@ try {
     };
     if (strict) Object.assign(config, installChatProfile(dirs));
     const env = { ...backendEnv(dirs, 'synthetic-server-password'), OPENCODE_CONFIG_CONTENT: JSON.stringify(config) };
-    const binary = resolveOpencodeBinary(process.env.OPENCODE_PATH || '');
-    const command = spawnCommand(binary.path, ['serve', '--hostname', '127.0.0.1', '--port', '0']);
-    proc = spawn(command.command, command.args, { cwd: dirs.workspace, env, windowsHide: true, windowsVerbatimArguments: command.windowsVerbatimArguments, stdio: ['ignore', 'pipe', 'pipe'] });
+    const binary = resolveBundledOpencodeBinary();
+    proc = spawn(binary.path, ['serve', '--hostname', '127.0.0.1', '--port', '0'], { cwd: dirs.workspace, env, windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
     const signal = AbortSignal.timeout(60000);
     const port = await new Promise((resolve, reject) => {
         let output = '';

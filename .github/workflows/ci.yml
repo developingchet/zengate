@@ -44,6 +44,8 @@ jobs:
       - run: npm run lint
       - run: npm run test:coverage
       - name: Check real OpenCode context and tool boundaries with a local dummy provider
+        env:
+          OPENCODE_PATH: must-not-be-used-by-contract-tests
         run: npm run test:backend-contract
       - name: Check the npm package contents
         if: matrix.os == 'ubuntu-latest'
