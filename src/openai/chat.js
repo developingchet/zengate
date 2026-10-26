@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { toApiError } from '../server/errors.js';
 import { parseChatRequest } from './chat-request.js';
+import { assertProfileMessages } from './media.js';
 import { chatUsage, generate } from './generate.js';
 import { setIgnoredParams } from './ignored-params.js';
 import { mapLimited } from './map-limited.js';
@@ -37,6 +38,7 @@ const finishReason = (result, legacy) => (legacy && result.finish === 'tool_call
 export function chatCompletionsHandler({ runner, catalog, limits }) {
     return async (req, res) => {
         const request = parseChatRequest(req.body, limits);
+        assertProfileMessages(request, limits);
         const model = await catalog.resolve(request.model);
         const prompt = buildPrompt(request, model);
         setIgnoredParams(res, request.ignored);

@@ -53,6 +53,7 @@ export async function startFakeOpencodeV2() {
 
         switch (route) {
             case 'GET /api/info': return json(200, { version: FAKE_V2_VERSION, pid: 1, urls: [], paths: { tmp: '' } });
+            case 'GET /api/plugin': return json(200, { data: state.plugins || [] });
             case 'GET /api/model': state.modelsInitialized = true; return json(200, { data: MODELS });
             case 'GET /api/agent': return state.failAgents ? json(500, { _tag: 'UnknownError' }) : json(200, { data: state.lazyAgents && !state.modelsInitialized ? [] : state.agents });
             case 'POST /api/session': sessions += 1; return json(200, { data: { id: `ses_${sessions}` } });

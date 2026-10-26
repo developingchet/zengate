@@ -6,6 +6,7 @@ import { probeBackend } from '../src/opencode/detect.js';
 import { createAttachedBackend } from '../src/opencode/backend.js';
 import { adaptEvent, errorFromV2, messageFromV2, providersFromModels } from '../src/opencode/v2-convert.js';
 import { mapModelError } from '../src/opencode/model-errors.js';
+import { CHAT_PLUGIN_ID, CHAT_AGENT } from '../src/opencode/chat-plugin.js';
 import { silentLogger } from '../src/logger.js';
 import { startFakeOpencode } from './helpers/fake-opencode.mjs';
 import { FAKE_V2_VERSION, startFakeOpencodeV2 } from './helpers/fake-opencode-v2.mjs';
@@ -57,6 +58,34 @@ describe('OpenCode 2 client', () => {
         assert.equal(model.reasoning, true);
         assert.equal(model.created, Date.parse('2025-10-17T00:00:00Z') / 1000);
         assert.equal(model.contextWindow, 200000);
+    });
+
+    it('fails closed when strict chat plugin readiness cannot be established', async () => {
+        const strict = createOpencodeClientV2({ baseUrl: fake.url, profile: 'chat' });
+        for (const plugins of [[], [{ id: CHAT_PLUGIN_ID, source: { type: 'local' }, state: { status: 'failed' } }], [{ id: 'another-plugin', source: { type: 'local' }, state: { status: 'active' } }]]) {
+            fake.state.plugins = plugins;
+            fake.calls.length = 0;
+            await assert.rejects(strict.prompt('ses_1', { agent: CHAT_AGENT, parts: [] }), (error) => error.code === 'backend_chat_profile_unavailable');
+            assert.equal(callsTo('POST', '/api/session/ses_1/prompt').length, 0);
+        }
+        fake.state.plugins = [];
+    });
+
+    it('keeps large strict-chat system instructions in trusted metadata and rejects media', async () => {
+        const strict = createOpencodeClientV2({ baseUrl: fake.url, profile: 'chat' });
+        fake.state.plugins = [{ id: CHAT_PLUGIN_ID, source: { type: 'local' }, state: { status: 'active' } }];
+        fake.state.agents = [{ id: CHAT_AGENT }];
+        fake.calls.length = 0;
+        try {
+            const system = 'x'.repeat(210 * 1024);
+            await strict.prompt('ses_1', { agent: CHAT_AGENT, system, parts: [{ type: 'text', text: 'hello' }] });
+            const prompt = callsTo('POST', '/api/session/ses_1/prompt')[0].body;
+            assert.equal(prompt.metadata.zengateChat.system, system);
+            assert.equal(prompt.text, 'hello');
+            assert.equal(callsTo('PUT', '/api/experimental/session/ses_1/instructions').length, 0);
+            await assert.rejects(strict.prompt('ses_1', { agent: CHAT_AGENT, parts: [{ type: 'file', url: 'data:image/png;base64,AAAA' }] }), (error) => error.code === 'unsupported_modality');
+            assert.equal(callsTo('POST', '/api/session/ses_1/prompt').length, 1);
+        } finally { fake.state.plugins = []; fake.state.agents = [{ id: 'plan' }]; }
     });
 
     it('creates sessions that ask before every action and deny execute and browser outright', async () => {

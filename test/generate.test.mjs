@@ -47,6 +47,12 @@ async function gen(scripts, requestOverrides, { signal = new AbortController().s
 }
 
 describe('generate', () => {
+    it('does not replay uncertain native or forced function calls in strict chat', async () => {
+        const runner = fakeRunner([{ result: { nativeToolAttempt: 'shell' } }]);
+        runner.allowCorrectiveRetry = false;
+        await assert.rejects(generate({ runner, prompt: PROMPT, request: request(), signal: new AbortController().signal }), (error) => error.code === 'upstream_rejected');
+        assert.equal(runner.calls.length, 1);
+    });
     it('streams plain text and reasoning', async () => {
         const { result, texts, reasoning } = await gen([{ deltas: [['reasoning', 'hmm'], ['text', 'Hel'], ['text', 'lo']], result: { finish: 'length' } }]);
         assert.equal(result.content, 'Hello');

@@ -20,7 +20,7 @@ export function createBackend(config, logger) {
             password: config.OPENCODE_SERVER_PASSWORD,
             logger,
         })
-        : createManagedBackend({ opencodePath: config.OPENCODE_PATH, logger });
+        : createManagedBackend({ opencodePath: config.OPENCODE_PATH, profile: config.OPENCODE_PROFILE, logger });
 }
 
 export function listen(app, { PORT, HOST }) {
@@ -72,7 +72,7 @@ export async function startGateway(config, { logger, backend = createBackend(con
     const getClient = () => backend.getClient();
     const hub = createEventHub({ getClient, logger, ownsAllSessions: backend.ownsAllSessions });
     const catalog = createCatalog({ getClient, logger });
-    const runner = createRunner({ getClient, hub, logger, agent: config.OPENCODE_AGENT });
+    const runner = createRunner({ getClient, hub, logger, profile: config.OPENCODE_PROFILE, agent: config.OPENCODE_PROFILE === 'chat' ? 'zengate-chat' : config.OPENCODE_AGENT });
     const store = createResponsesStore({ maxEntries: config.RESPONSES_STORE_MAX, maxChars: config.RESPONSES_STORE_MB * MB });
     const { app, close: closeApp, startDraining } = createApp({ config, logger, backend, hub, catalog, runner, store });
 

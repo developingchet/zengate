@@ -33,6 +33,8 @@
     "test:coverage": "node --test --experimental-test-coverage \"test/**/*.test.mjs\" \"test/**/*.test.js\"",
     "test:live": "node scripts/live-e2e.mjs",
     "test:leak": "node scripts/live-tool-leak.mjs",
+    "test:backend-contract": "node scripts/capture-context.mjs && node scripts/capture-context.mjs --strict && node scripts/capture-context.mjs --tool-attempt && node scripts/capture-context.mjs --strict --tool-attempt",
+    "test:chat-live": "node scripts/live-chat-profile.mjs",
     "verify": "npm run lint && npm test",
     "audit": "npm audit --omit=dev --audit-level=high"
   },

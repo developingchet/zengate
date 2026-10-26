@@ -1,6 +1,7 @@
 import { BackendError, createHttp } from './http.js';
 import { adaptEvent, messageFromV2, providersFromModels } from './v2-convert.js';
 import { ApiError } from '../server/errors.js';
+import { CHAT_PLUGIN_ID, CHAT_AGENT } from './chat-plugin.js';
 
 const MESSAGE_PAGE = 200;
 const MAX_PAGES = 5;
@@ -72,9 +73,20 @@ function formatInstruction(format) {
  * @param {{ baseUrl: string, username?: string, password?: string, fetchImpl?: typeof fetch }} options
  */
 export function createOpencodeClientV2(options) {
+    const chatOnly = options.profile === 'chat';
     const { base, request, openStream } = createHttp(options);
     const id = (value) => encodeURIComponent(value);
     let agentsCache = null;
+    async function verifyChatProfile(signal) {
+        let plugins = (await call('GET', '/api/plugin', { signal }))?.data;
+        if (Array.isArray(plugins) && plugins.length === 0) {
+            await call('GET', '/api/model', { signal });
+            plugins = (await call('GET', '/api/plugin', { signal }))?.data;
+        }
+        if (!Array.isArray(plugins) || !plugins.some((plugin) => plugin.id === CHAT_PLUGIN_ID && plugin.state?.status === 'active' && plugin.source?.type === 'local')) {
+            throw new ApiError(503, 'The strict chat profile is unavailable; no prompt was submitted.', { code: 'backend_chat_profile_unavailable' });
+        }
+    }
 
     /**
      * OpenCode 2 answers paths outside /api with its web app (HTTP 200, HTML),
@@ -182,7 +194,7 @@ export function createOpencodeClientV2(options) {
             // The tools stay offered to the model exactly as in stock OpenCode: denying them
             // all changes the request in a way Zen's free tier refuses.
             const created = await call('POST', '/api/session', {
-                body: { title: 'openai-gateway', permissions: SESSION_PERMISSIONS },
+                body: { title: 'openai-gateway', permissions: chatOnly ? [{ action: '*', resource: '*', effect: 'deny' }] : SESSION_PERMISSIONS },
                 ...requestOptions,
             });
             return { id: created?.data?.id };
@@ -200,9 +212,15 @@ export function createOpencodeClientV2(options) {
         async prompt(sessionId, body, requestOptions = {}) {
             const { signal } = requestOptions;
             const { text, files } = splitParts(body.parts);
-            const overflow = await prepare(sessionId, body, signal);
+            if (chatOnly) {
+                if (files.length) throw new ApiError(400, 'The strict chat profile currently supports text inputs only.', { code: 'unsupported_modality', param: 'messages' });
+                if (body.agent !== CHAT_AGENT) throw new ApiError(503, 'Strict chat requires the dedicated conversational agent.', { code: 'backend_agent_unavailable' });
+                await verifyChatProfile(signal);
+            }
+            const overflow = await prepare(sessionId, chatOnly ? { ...body, system: undefined, format: undefined } : body, signal);
             const queued = await call('POST', `/api/session/${id(sessionId)}/prompt`, {
-                body: { text: overflow ? `${overflow}\n\n${text}` : text, ...(files.length ? { files } : {}) },
+                body: { text: overflow ? `${overflow}\n\n${text}` : text, ...(files.length ? { files } : {}),
+                    ...(chatOnly ? { metadata: { zengateChat: { version: 1, system: [body.system, formatInstruction(body.format)].filter(Boolean).join('\n\n') } } } : {}) },
                 signal,
             });
             if (!queued?.data?.id) throw new BackendError('OpenCode did not return a message id for the prompt');
@@ -230,5 +248,6 @@ export function createOpencodeClientV2(options) {
         },
         openEvents: (signal) => openStream('/api/event', signal),
         adaptEvent,
+        verifyChatProfile,
     });
 }

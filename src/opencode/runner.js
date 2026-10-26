@@ -13,7 +13,7 @@ const STREAMED_KINDS = new Set(['text', 'reasoning']);
  * pending; when it returns, the final message is reconciled against what was
  * streamed so no text is lost or duplicated even if events were missed.
  */
-export function createRunner({ getClient, hub, logger, agent }) {
+export function createRunner({ getClient, hub, logger, agent, profile = 'compatible' }) {
     /**
      * @param {{ model: { providerID: string, modelID: string }, system?: string, parts: object[], variant?: string, format?: object }} request
      * @param {{ signal: AbortSignal, onDelta?: (kind: 'text'|'reasoning', text: string) => void }} options
@@ -129,7 +129,7 @@ export function createRunner({ getClient, hub, logger, agent }) {
         hub.release(sessionId);
     }
 
-    return Object.freeze({ run });
+    return Object.freeze({ run, allowCorrectiveRetry: profile !== 'chat' });
 }
 
 /** Tracks part kinds and message roles so only assistant text/reasoning streams. */

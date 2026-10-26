@@ -17,6 +17,7 @@ const SPEC = Object.freeze({
     OPENCODE_SERVER_PASSWORD: { type: 'string', default: '', secret: true },
     ALLOW_INSECURE_BACKEND_HTTP: { type: 'bool', default: false },
     OPENCODE_AGENT: { type: 'string', default: 'plan' },
+    OPENCODE_PROFILE: { type: 'enum', default: 'compatible', values: ['compatible', 'chat'] },
     MAX_CONCURRENT: { type: 'int', default: 8, min: 1, max: 64 },
     MAX_QUEUE: { type: 'int', default: 32, min: 0, max: 1000 },
     RATE_LIMIT_PER_MINUTE: { type: 'int', default: 120, min: 0, max: 100000 },
@@ -170,6 +171,12 @@ export function loadConfig(fileConfig = {}, env = process.env) {
     }
     if (!/^[\w.-]{1,64}$/.test(config.OPENCODE_AGENT || '')) {
         problems.push('OPENCODE_AGENT must be a simple agent name');
+    }
+    if (config.OPENCODE_PROFILE === 'chat' && config.OPENCODE_SERVER_URL) {
+        problems.push('OPENCODE_PROFILE=chat requires the managed backend; attached servers cannot establish this boundary');
+    }
+    if (config.OPENCODE_PROFILE === 'chat' && config.OPENCODE_AGENT !== 'plan' && config.OPENCODE_AGENT !== 'zengate-chat') {
+        problems.push('OPENCODE_PROFILE=chat selects the dedicated zengate-chat agent; remove the OPENCODE_AGENT override');
     }
     validateKeys(config.API_KEYS, problems);
     validateServerUrl(config, problems);

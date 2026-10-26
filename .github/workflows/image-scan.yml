@@ -4,6 +4,7 @@ name: image-scan
 # releases scan every image they build; this catches CVEs disclosed after a
 # release. Findings go to the Security tab, and the run fails on fixable
 # HIGH or CRITICAL vulnerabilities so the failure shows up in Actions.
+# Pull requests build and scan their candidate image instead of the old release.
 
 on:
   schedule:
@@ -16,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: image-scan
+  group: image-scan-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -34,7 +35,22 @@ jobs:
       security-events: write # upload SARIF to code scanning
     env:
       TRIVY_PLATFORM: linux/${{ matrix.arch }}
+      IMAGE: ${{ github.event_name == 'pull_request' && format('zengate:pr-{0}-{1}', github.event.pull_request.number, matrix.arch) || 'docker.io/developingchet/zengate:latest' }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'pull_request'
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        if: github.event_name == 'pull_request'
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: github.event_name == 'pull_request'
+      - name: Build the pull request image
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          tags: ${{ env.IMAGE }}
       - name: Scan for the Security tab
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

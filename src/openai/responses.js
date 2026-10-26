@@ -1,4 +1,5 @@
 import { ApiError } from '../server/errors.js';
+import { assertProfileMessages } from './media.js';
 import { generate } from './generate.js';
 import { setIgnoredParams } from './ignored-params.js';
 import { buildPrompt } from './prompt.js';
@@ -19,6 +20,7 @@ export function responsesHandlers({ runner, catalog, store, limits }) {
     const create = async (req, res) => {
         const scoped = store.scope(req.clientId);
         const request = parseResponsesRequest(req.body, limits, scoped);
+        assertProfileMessages(request, limits);
         const model = await catalog.resolve(request.model);
         const prompt = buildPrompt(request, model);
         setIgnoredParams(res, request.ignored);
