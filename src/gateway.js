@@ -20,16 +20,20 @@ export function createBackend(config, logger) {
             password: config.OPENCODE_SERVER_PASSWORD,
             logger,
         })
-        : createManagedBackend({ opencodePath: config.OPENCODE_PATH, logger });
+        : createManagedBackend({ opencodePath: config.OPENCODE_PATH, profile: config.OPENCODE_PROFILE, logger });
 }
 
-function listen(app, { PORT, HOST }) {
+export function listen(app, { PORT, HOST }) {
     return new Promise((resolve, reject) => {
         const server = app.listen(PORT, HOST);
         server.once('listening', () => resolve(server));
-        server.once('error', (error) => reject(error.code === 'EADDRINUSE'
-            ? new Error(`Port ${PORT} on ${HOST} is already in use. Stop the other process or set PORT.`)
-            : error));
+        server.once('error', (error) => {
+            if (error.code === 'EADDRINUSE') {
+                reject(new Error(`Port ${PORT} on ${HOST} is already in use. Stop the other process or set PORT.`, { cause: error }));
+            } else if (error.code === 'EACCES') {
+                reject(new Error(`Permission denied binding port ${PORT} on ${HOST}. Windows may reserve this port in an excluded TCP range; check \`netsh interface ipv4 show excludedportrange protocol=tcp\` on Windows and set PORT to an available port (for example 9083).`, { cause: error }));
+            } else reject(error);
+        });
     });
 }
 
@@ -68,7 +72,7 @@ export async function startGateway(config, { logger, backend = createBackend(con
     const getClient = () => backend.getClient();
     const hub = createEventHub({ getClient, logger, ownsAllSessions: backend.ownsAllSessions });
     const catalog = createCatalog({ getClient, logger });
-    const runner = createRunner({ getClient, hub, logger, agent: config.OPENCODE_AGENT });
+    const runner = createRunner({ getClient, hub, logger, profile: config.OPENCODE_PROFILE, agent: config.OPENCODE_PROFILE === 'chat' ? 'zengate-chat' : config.OPENCODE_AGENT });
     const store = createResponsesStore({ maxEntries: config.RESPONSES_STORE_MAX, maxChars: config.RESPONSES_STORE_MB * MB });
     const { app, close: closeApp, startDraining } = createApp({ config, logger, backend, hub, catalog, runner, store });
 

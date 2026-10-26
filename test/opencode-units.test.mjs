@@ -39,9 +39,9 @@ describe('mapModelError', () => {
         assert.equal(limited.status, 429);
         assert.equal(limited.code, 'upstream_rate_limited');
         assert.equal(limited.retryAfter, 13);
-        assert.equal(api(429, { responseHeaders: { 'Retry-After': 'soon' } }).retryAfter, 30);
-        assert.equal(api(429, { responseHeaders: { 'retry-after': '99999' } }).retryAfter, 30);
-        assert.equal(api(429).retryAfter, 30);
+        assert.equal(api(429, { responseHeaders: { 'Retry-After': 'soon' } }).retryAfter, undefined);
+        assert.equal(api(429, { responseHeaders: { 'retry-after': '99999' } }).retryAfter, 99999);
+        assert.equal(api(429).retryAfter, undefined);
         for (const status of [400, 413, 422]) assert.equal(api(status).code, 'upstream_rejected');
         for (const status of [401, 403]) assert.equal(api(status).code, 'upstream_refused');
         assert.equal(api(500).code, 'upstream_error');

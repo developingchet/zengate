@@ -1,5 +1,6 @@
 import { ApiError } from '../server/errors.js';
 import { BackendError } from './client.js';
+import { isQuotaError, retryTiming } from './retry-timing.js';
 
 const MAX_DETAIL = 400;
 
@@ -8,18 +9,17 @@ function detail(error) {
     return String(message).replace(/\s+/g, ' ').trim().slice(0, MAX_DETAIL);
 }
 
-function retryAfter(error) {
-    const headers = error?.data?.responseHeaders || {};
-    const value = Number(headers['retry-after'] ?? headers['Retry-After']);
-    return Number.isFinite(value) && value > 0 && value < 3600 ? Math.ceil(value) : 30;
-}
-
 /**
  * Translate an OpenCode assistant-message error into either a finish reason
  * (the turn produced a usable, if cut short, answer) or an ApiError to throw.
  * @returns {{ finish?: string, throw?: ApiError }}
  */
 export function mapModelError(error) {
+    if (isQuotaError(error)) {
+        return { throw: new ApiError(429, 'The upstream allowance for this model is exhausted.', {
+            code: 'upstream_quota_exhausted', retryAfter: retryTiming(error.data),
+        }) };
+    }
     const name = error?.name || 'UnknownError';
     const message = detail(error);
     switch (name) {
@@ -38,7 +38,7 @@ export function mapModelError(error) {
         case 'APIError': {
             const status = Number(error?.data?.statusCode) || 502;
             if (status === 429) {
-                return { throw: new ApiError(429, `OpenCode Zen rate limit reached for this model; retry later. ${message}`.trim(), { code: 'upstream_rate_limited', retryAfter: retryAfter(error) }) };
+                return { throw: new ApiError(429, 'The upstream provider is throttling requests for this model.', { code: 'upstream_rate_limited', retryAfter: retryTiming(error.data) }) };
             }
             if (status === 400 || status === 413 || status === 422) {
                 return { throw: new ApiError(400, `The model rejected the request: ${message}`, { code: 'upstream_rejected' }) };

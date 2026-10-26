@@ -82,7 +82,7 @@ export function createApp({ config, logger, backend, hub, catalog, runner, store
     const limiter = createLimiter({ maxConcurrent: config.MAX_CONCURRENT, maxQueue: config.MAX_QUEUE, queueTimeoutMs: config.QUEUE_TIMEOUT_MS });
     const admission = admissionMiddleware({ limit: config.MAX_CONCURRENT + config.MAX_QUEUE });
     const rateLimit = rateLimitMiddleware({ perMinute: config.RATE_LIMIT_PER_MINUTE, onLimited: metrics.rateLimited });
-    const limits = { maxBytes: config.MAX_MEDIA_MB * MB, maxTotalBytes: config.MAX_BODY_MB * MB };
+    const limits = { maxBytes: config.MAX_MEDIA_MB * MB, maxTotalBytes: config.MAX_BODY_MB * MB, textOnly: config.OPENCODE_PROFILE === 'chat' };
     let draining = false;
 
     app.disable('x-powered-by');

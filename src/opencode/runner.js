@@ -13,7 +13,7 @@ const STREAMED_KINDS = new Set(['text', 'reasoning']);
  * pending; when it returns, the final message is reconciled against what was
  * streamed so no text is lost or duplicated even if events were missed.
  */
-export function createRunner({ getClient, hub, logger, agent }) {
+export function createRunner({ getClient, hub, logger, agent, profile = 'compatible' }) {
     /**
      * @param {{ model: { providerID: string, modelID: string }, system?: string, parts: object[], variant?: string, format?: object }} request
      * @param {{ signal: AbortSignal, onDelta?: (kind: 'text'|'reasoning', text: string) => void }} options
@@ -55,8 +55,9 @@ export function createRunner({ getClient, hub, logger, agent }) {
             const status = event.type === 'session.status' ? event.properties?.status : null;
             if (status?.type !== 'retry') return;
             logger.debug('OpenCode is retrying the upstream request', { sessionId, attempt: status.attempt, message: status.message });
-            if (status.attempt >= MAX_UPSTREAM_RETRIES && !local.signal.aborted) {
-                local.abort(new ApiError(502, `The model provider keeps failing: ${String(status.message || 'unknown error').slice(0, 300)}`, { code: 'upstream_error' }));
+            const mapped = status.error ? mapModelError(status.error).throw : null;
+            if ((mapped?.code === 'upstream_quota_exhausted' || status.attempt >= MAX_UPSTREAM_RETRIES) && !local.signal.aborted) {
+                local.abort(mapped || new ApiError(502, `The model provider keeps failing: ${String(status.message || 'unknown error').slice(0, 300)}`, { code: 'upstream_error' }));
             }
         };
         const unsubscribe = hub.subscribe(sessionId, onEvent);
@@ -128,7 +129,7 @@ export function createRunner({ getClient, hub, logger, agent }) {
         hub.release(sessionId);
     }
 
-    return Object.freeze({ run });
+    return Object.freeze({ run, allowCorrectiveRetry: profile !== 'chat' });
 }
 
 /** Tracks part kinds and message roles so only assistant text/reasoning streams. */

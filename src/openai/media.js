@@ -1,5 +1,20 @@
 import { invalidRequest, unsupported } from '../server/errors.js';
 
+const ATTACHMENT_PARTS = new Set(['image_url', 'input_image', 'input_audio', 'file', 'input_file', 'video_url', 'input_video']);
+
+/** Profile validation precedes attachment decoding, DNS, downloads and model resolution. */
+export function assertProfilePart(part, options, param) {
+    if (options?.textOnly && ATTACHMENT_PARTS.has(part?.type)) {
+        throw invalidRequest('The strict chat profile supports text inputs only.', param, 'unsupported_modality');
+    }
+}
+
+export function assertProfileMessages(request, options) {
+    if (options?.textOnly && request.messages.some((message) => message.media?.length)) {
+        throw invalidRequest('The strict chat profile supports text inputs only.', 'messages', 'unsupported_modality');
+    }
+}
+
 /**
  * Canonical media attachment:
  * { kind: 'image'|'audio'|'video'|'pdf'|'text', mime, url, filename?, text? }

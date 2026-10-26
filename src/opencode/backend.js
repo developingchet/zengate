@@ -1,6 +1,8 @@
 import { execFile, spawn } from 'node:child_process';
 import { backendOrigin, createOpencodeClient } from './client.js';
 import { probeBackend } from './detect.js';
+import { createOpencodeClientV2 } from './client-v2.js';
+import { installChatProfile } from './chat-profile.js';
 import { resolveOpencodeBinary, spawnCommand } from './binary.js';
 import {
     backendEnv, createIsolatedRoot, HEARTBEAT_MS, randomPassword, recordBackendPid, removeIsolatedRoot, sweepStaleRoots, touchIsolatedRoot,
@@ -90,7 +92,7 @@ function pipeLogs(stream, logger) {
  * Starts and supervises a private `opencode serve` bound to 127.0.0.1 on a
  * port it picks itself, with a random password. It restarts with backoff if it crashes.
  */
-export function createManagedBackend({ opencodePath, logger }) {
+export function createManagedBackend({ opencodePath, profile = 'compatible', logger }) {
     let client = null;
     let child = null;
     let dirs = null;
@@ -106,11 +108,13 @@ export function createManagedBackend({ opencodePath, logger }) {
         const { root } = dirs;
         const deadline = Date.now() + START_TIMEOUT_MS;
         const password = randomPassword();
+        const env = backendEnv(dirs, password);
+        if (profile === 'chat') env.OPENCODE_CONFIG_CONTENT = JSON.stringify(installChatProfile(dirs));
         const { command, args, windowsVerbatimArguments } = spawnCommand(binary.path, ['serve', '--hostname', '127.0.0.1', '--port', '0']);
         logger.debug('Starting OpenCode backend', { binary: binary.path, source: binary.source });
         const proc = spawn(command, args, {
             cwd: dirs.workspace,
-            env: backendEnv(dirs, password),
+            env,
             stdio: ['ignore', 'pipe', 'pipe'],
             detached: process.platform !== 'win32',
             windowsHide: true,
@@ -134,6 +138,11 @@ export function createManagedBackend({ opencodePath, logger }) {
         const found = await waitHealthy({ baseUrl: `http://127.0.0.1:${port}`, username: 'opencode', password }, deadline, () => dead);
         client = found.client;
         version = found.health.version || null;
+        if (profile === 'chat') {
+            if (client.api !== 'v2' || version !== '2.1.2') throw new Error('OPENCODE_PROFILE=chat requires the validated OpenCode 2.1.2 runtime');
+            client = createOpencodeClientV2({ baseUrl: `http://127.0.0.1:${port}`, username: 'opencode', password, profile });
+            await client.verifyChatProfile();
+        }
         ready = true;
         served = true;
         restartDelay = 1000;

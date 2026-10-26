@@ -23,6 +23,12 @@ function problemsOf(fn) {
 }
 
 describe('loadConfig', () => {
+    it('restricts strict chat to the managed dedicated profile', () => {
+        assert.equal(loadConfig({}, { OPENCODE_PROFILE: 'chat' }).OPENCODE_PROFILE, 'chat');
+        assert.throws(() => loadConfig({}, { OPENCODE_PROFILE: 'unknown' }), /compatible, chat/);
+        assert.throws(() => loadConfig({}, { OPENCODE_PROFILE: 'chat', OPENCODE_SERVER_URL: 'http:\/\/127.0.0.1:4000' }), /requires the managed backend/);
+        assert.throws(() => loadConfig({}, { OPENCODE_PROFILE: 'chat', OPENCODE_AGENT: 'build' }), /dedicated zengate-chat/);
+    });
     it('applies defaults and freezes the result', () => {
         const config = loadConfig({}, {});
         assert.equal(config.PORT, 8083);

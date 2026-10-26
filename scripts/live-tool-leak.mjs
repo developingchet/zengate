@@ -86,7 +86,9 @@ async function main() {
     const client = backend.getClient();
     if (client.api !== 'v2') throw new Error('This check is for OpenCode 2; the OpenCode 1 backend relies on its config instead.');
     const models = (await client.providers()).providers.flatMap((provider) => Object.keys(provider.models).map((id) => ({ providerID: provider.id, modelID: id })));
-    const model = models.find((m) => m.modelID === process.env.MODEL) || models[0];
+    const requestedModel = process.env.MODEL || 'big-pickle';
+    const model = models.find((m) => m.providerID === 'opencode' && m.modelID === requestedModel);
+    if (!model) throw new Error(`Requested Zen model ${requestedModel} is unavailable; no alternate model was selected`);
     out(`OpenCode ${backend.version()}, model ${model.modelID}`);
 
     const { id: sessionId } = await client.createSession({ signal: abort.signal });

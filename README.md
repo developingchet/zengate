@@ -202,7 +202,9 @@ curl http://127.0.0.1:8083/v1/chat/completions \
 | `POST /v1/embeddings` | `404 unsupported_endpoint`: Zen serves chat models only |
 | `GET /metrics` | Request counters, latency and time-to-first-token, slot usage and the OpenCode version (needs the key). JSON by default; Prometheus text format for `?format=prometheus` or an `Accept: text/plain` scrape |
 
-Routes also work without the `/v1` prefix. Errors use the standard OpenAI envelope, `{"error": {"message", "type", "param", "code"}}`, with matching HTTP status codes (400, 401, 404, 413, 429 with `Retry-After`, 502, 503, 504).
+Routes also work without the `/v1` prefix. Errors use the standard OpenAI envelope, `{"error": {"message", "type", "param", "code"}}`, with matching HTTP status codes (400, 401, 404, 413, 429, 502, 503, 504).
+
+Upstream allowance exhaustion returns HTTP 429 with `code: "upstream_quota_exhausted"`; temporary provider throttling uses `upstream_rate_limited`. Validated provider timing appears as `Retry-After` seconds on HTTP errors and `error.retry_after` seconds in the JSON envelope, including Chat/Completions SSE errors and Responses `response.failed` events. Multi-hour delays are preserved. If timing is absent or invalid, both fields are omitted: the reset time is unknown. Structured quota classification needs OpenCode 2.1.2+ (bundled); older backends can report an unclassified 429, which remains `upstream_rate_limited`. The gateway never infers quota classification from human-readable error text.
 
 **Inputs** (validated against each model's capabilities; a model that can't take an input returns `400 unsupported_modality`):
 
@@ -243,6 +245,7 @@ Set values as environment variables or in the config file (same names; see [`con
 | `TRUST_PROXY` | `0` | Number of reverse-proxy hops to trust for client IPs. |
 | `LOG_LEVEL` / `LOG_JSON` | `info` / `false` | Log verbosity, and JSON-lines output. |
 | `OPENCODE_AGENT` | `plan` | The OpenCode agent each session uses. |
+| `OPENCODE_PROFILE` | `compatible` | `chat` enables the dedicated strict text-only conversational profile described below. |
 | `OPENCODE_PATH` | bundled | Use a different `opencode` binary, OpenCode 1 or 2. |
 | `OPENCODE_SERVER_URL` | none | Attach to an existing `opencode serve` instead of starting one (see below). |
 | `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD` | `opencode` / none | Basic auth for that server. Credentials inside `OPENCODE_SERVER_URL` are refused. |
@@ -255,10 +258,26 @@ Set values as environment variables or in the config file (same names; see [`con
 
 - Sessions are created with every action set to `ask`, and the gateway rejects each request, as it does with OpenCode 1.
 - `response_format` is passed to the model as an instruction, because OpenCode 2 has no native structured output. The JSON arrives when the answer is complete rather than streamed.
-- `OPENCODE_AGENT` applies only if the server has an agent of that name; otherwise the session keeps its default agent.
+- `OPENCODE_AGENT` must name an available primary agent. Missing, hidden or subagent-only agents fail before a prompt is submitted (`503 backend_agent_unavailable`); lookup or selection failures also stop dispatch. There is no silent fallback to the backend's default agent.
 - OpenCode 2 has an `execute` tool that runs scripts the model writes inside the OpenCode process. Scripts can call `fetch` on any URL without a permission request, so the gateway denies the `execute` action and the tool is not offered to the model. Browser tools are denied too (they also need a desktop app attached to the session). Every other tool, including shell, file, web and subagent tools, asks and is rejected. A later OpenCode 2 release could add a way around this, so after upgrading it, run `npm run test:leak`: it asks a model to use every tool, and to fetch a local listener, in a session with the gateway's permissions, and fails if anything ran.
 
+### Strict conversational profile
+
+Set `OPENCODE_PROFILE=chat` in the environment or config.json for text-only conversational requests. This profile uses the managed, isolated OpenCode 2.1.2 runtime and a gateway-owned `zengate-chat` agent. It refuses attached servers, other runtime versions and conflicting agent overrides. Startup and each prompt verify that the required local plugin is active; missing/incompatible profiles fail before prompt dispatch.
+
+The profile uses OpenCode's supported session hooks to construct provider input from only a fixed conversational instruction, the caller's system text, and the caller's rendered conversation. It does not forward backend history/reminders, environment paths, skill descriptions, coding instructions or host-tool schemas. Every host tool is removed and every permission decision is denied outside the model. Title generation is local; auxiliary generation, compaction and tool continuations are blocked. Provider retries and the gateway's corrective function-call replay are disabled. Caller function calls still use the text protocol, but an uncertain call fails rather than being replayed. Media inputs return `400 unsupported_modality` in this profile.
+
+**Provider compatibility is separate.** Zen's free tier can refuse requests without its coding context/tools. A quota error or refusal is returned as an API error; the gateway does not restore the coding context, bypass provider restrictions, substitute a model/provider or replay elsewhere. Strict mode does not promise successful keyless chat on every Zen model. A separately authenticated paid Console/Go text-only adapter is a possible alternative product mode; it is not an automatic fallback or implemented here. Real-model compatibility needs available allowance and must be checked with `MODEL=big-pickle npm run test:chat-live`.
+
+The default `compatible` profile retains stock OpenCode context for provider compatibility. Even a custom conversational agent can receive backend instructions and synthetic runtime paths there; tool rejection does not make those instructions confidential. Use strict chat when that context boundary is required. Never keep credentials or authorization rules in model prompts, and do not assume universal prompt secrecy.
+
+From a source checkout, `npm run test:backend-contract` checks both profiles with the real bundled CLI and a local dummy provider using synthetic credentials. It captures every provider request, asserts strict input contains no workspace/environment context or tools, and forces a valid shell call: compatibility mode must reject it, while strict mode must neither execute it nor make another provider call. It also tests ordinary strict-chat output. These are deterministic backend contract tests, not real Zen evidence. Startup may refresh OpenCode's public model catalog; fixture inference is restricted to the local provider. `npm run test:leak` remains the real-model tool-attempt check.
+
+Contract tests ignore `OPENCODE_PATH`, require the installed bundled CLI and launch its native executable directly without a command interpreter. Use the live test runners when deliberately evaluating an alternative `OPENCODE_PATH` runtime.
+
 ## Deployment
+
+**Windows ports.** Windows can reserve TCP ranges that include 8083 or 8190. An `EACCES` bind error now identifies the host/port and suggests checking `netsh interface ipv4 show excludedportrange protocol=tcp`. Choose an available port in `PORT` (for example 9083); no port is guaranteed available on every host. The default stays 8083 so existing client and container configurations continue to work.
 
 **Docker.** The key persists in the `/data` volume. You can pass `-e API_KEY=...` instead. Publish the port on `127.0.0.1`, or put a TLS reverse proxy in front before exposing it to a network. `docker stop` waits only 10 seconds before killing the container, so pass `--stop-timeout 20` (or `stop_grace_period` in Compose) to let in-flight requests finish. The container also runs with a read-only root (`--read-only --tmpfs /tmp`), `--cap-drop ALL` and `--security-opt no-new-privileges:true`. On shutdown, `/ready` answers `503` for up to 2 seconds before the listener closes, so a load balancer polling it stops sending traffic first.
 

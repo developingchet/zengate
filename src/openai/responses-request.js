@@ -1,6 +1,6 @@
 import { invalidRequest, unsupported } from '../server/errors.js';
 import { MAX_TOOLS, parseResponseFormat, parseToolChoice } from './chat-request.js';
-import { audioFromBase64, fileAttachment, imageFromUrl, videoFromUrl } from './media.js';
+import { assertProfilePart, audioFromBase64, fileAttachment, imageFromUrl, videoFromUrl } from './media.js';
 import { parseMaxTokens } from './length-limit.js';
 import { escapeFileTags, fileBlock } from './markup.js';
 
@@ -45,6 +45,7 @@ function parseContent(content, param, media, role) {
     content.forEach((part, index) => {
         const where = `${param}[${index}]`;
         const options = { ...media, param: where };
+        assertProfilePart(part, media, where);
         switch (part?.type) {
             case 'input_text': case 'output_text': case 'text': case 'summary_text':
                 texts.push(escapeFileTags(part.text)); break;

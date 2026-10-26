@@ -1,5 +1,5 @@
 import { invalidRequest, unsupported } from '../server/errors.js';
-import { audioFromBase64, fileAttachment, imageFromUrl, videoFromUrl } from './media.js';
+import { assertProfilePart, audioFromBase64, fileAttachment, imageFromUrl, videoFromUrl } from './media.js';
 import { parseMaxTokens } from './length-limit.js';
 import { escapeFileTags, fileBlock } from './markup.js';
 import { newCallId } from './tool-calls.js';
@@ -75,6 +75,7 @@ function parseUserContent(content, param, media) {
     content.forEach((part, index) => {
         const where = `${param}[${index}]`;
         const options = { ...media, param: where };
+        assertProfilePart(part, media, where);
         switch (part?.type) {
             case 'text': texts.push(escapeFileTags(part.text)); break;
             case 'image_url': attachments.push(imageFromUrl(typeof part.image_url === 'string' ? part.image_url : part.image_url?.url, options)); break;

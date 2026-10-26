@@ -1,5 +1,7 @@
 import { BackendError, createHttp } from './http.js';
 import { adaptEvent, messageFromV2, providersFromModels } from './v2-convert.js';
+import { ApiError } from '../server/errors.js';
+import { CHAT_PLUGIN_ID, CHAT_AGENT } from './chat-plugin.js';
 
 const MESSAGE_PAGE = 200;
 const MAX_PAGES = 5;
@@ -71,9 +73,20 @@ function formatInstruction(format) {
  * @param {{ baseUrl: string, username?: string, password?: string, fetchImpl?: typeof fetch }} options
  */
 export function createOpencodeClientV2(options) {
+    const chatOnly = options.profile === 'chat';
     const { base, request, openStream } = createHttp(options);
     const id = (value) => encodeURIComponent(value);
     let agentsCache = null;
+    async function verifyChatProfile(signal) {
+        let plugins = (await call('GET', '/api/plugin', { signal }))?.data;
+        if (Array.isArray(plugins) && plugins.length === 0) {
+            await call('GET', '/api/model', { signal });
+            plugins = (await call('GET', '/api/plugin', { signal }))?.data;
+        }
+        if (!Array.isArray(plugins) || !plugins.some((plugin) => plugin.id === CHAT_PLUGIN_ID && plugin.state?.status === 'active' && plugin.source?.type === 'local')) {
+            throw new ApiError(503, 'The strict chat profile is unavailable; no prompt was submitted.', { code: 'backend_chat_profile_unavailable' });
+        }
+    }
 
     /**
      * OpenCode 2 answers paths outside /api with its web app (HTTP 200, HTML),
@@ -88,15 +101,16 @@ export function createOpencodeClientV2(options) {
     /** Names of the agents the server knows, cached briefly (the list is static for a server). */
     async function knownAgents(signal) {
         if (agentsCache && Date.now() - agentsCache.at < AGENTS_CACHE_MS) return agentsCache.names;
-        let agents;
-        try {
-            agents = (await call('GET', '/api/agent', { signal }))?.data || [];
-        } catch (error) {
-            // Selecting an agent is optional; the session keeps its default one. A failure is not cached.
-            if (!(error instanceof BackendError) || signal?.aborted) throw error;
-            return new Set();
+        let agents = (await call('GET', '/api/agent', { signal }))?.data;
+        // V2 loads agent plugins lazily. A new server can list no agents until
+        // the model catalog has initialized its location; never cache that state.
+        if (Array.isArray(agents) && agents.length === 0) {
+            await call('GET', '/api/model', { signal });
+            agents = (await call('GET', '/api/agent', { signal }))?.data;
         }
-        const names = new Set(agents.map((agent) => agent.id || agent.name));
+        if (!Array.isArray(agents)) throw new BackendError('OpenCode did not return an agent list');
+        const names = new Set(agents.filter((agent) => agent && agent.mode !== 'subagent' && agent.hidden !== true)
+            .map((agent) => agent.id || agent.name));
         agentsCache = { at: Date.now(), names };
         return names;
     }
@@ -125,7 +139,10 @@ export function createOpencodeClientV2(options) {
      */
     async function prepare(sessionId, body, signal) {
         // An agent can carry its own model, so it is selected before the model is.
-        if (body.agent && (await knownAgents(signal)).has(body.agent)) {
+        if (body.agent) {
+            if (!(await knownAgents(signal)).has(body.agent)) {
+                throw new ApiError(503, 'The configured OPENCODE_AGENT is unavailable or incompatible with this backend.', { code: 'backend_agent_unavailable' });
+            }
             await call('POST', `/api/session/${id(sessionId)}/agent`, { body: { agent: body.agent }, signal });
         }
         const { providerID, modelID } = body.model || {};
@@ -177,7 +194,7 @@ export function createOpencodeClientV2(options) {
             // The tools stay offered to the model exactly as in stock OpenCode: denying them
             // all changes the request in a way Zen's free tier refuses.
             const created = await call('POST', '/api/session', {
-                body: { title: 'openai-gateway', permissions: SESSION_PERMISSIONS },
+                body: { title: 'openai-gateway', permissions: chatOnly ? [{ action: '*', resource: '*', effect: 'deny' }] : SESSION_PERMISSIONS },
                 ...requestOptions,
             });
             return { id: created?.data?.id };
@@ -195,9 +212,15 @@ export function createOpencodeClientV2(options) {
         async prompt(sessionId, body, requestOptions = {}) {
             const { signal } = requestOptions;
             const { text, files } = splitParts(body.parts);
-            const overflow = await prepare(sessionId, body, signal);
+            if (chatOnly) {
+                if (files.length) throw new ApiError(400, 'The strict chat profile currently supports text inputs only.', { code: 'unsupported_modality', param: 'messages' });
+                if (body.agent !== CHAT_AGENT) throw new ApiError(503, 'Strict chat requires the dedicated conversational agent.', { code: 'backend_agent_unavailable' });
+                await verifyChatProfile(signal);
+            }
+            const overflow = await prepare(sessionId, chatOnly ? { ...body, system: undefined, format: undefined } : body, signal);
             const queued = await call('POST', `/api/session/${id(sessionId)}/prompt`, {
-                body: { text: overflow ? `${overflow}\n\n${text}` : text, ...(files.length ? { files } : {}) },
+                body: { text: overflow ? `${overflow}\n\n${text}` : text, ...(files.length ? { files } : {}),
+                    ...(chatOnly ? { metadata: { zengateChat: { version: 1, system: [body.system, formatInstruction(body.format)].filter(Boolean).join('\n\n') } } } : {}) },
                 signal,
             });
             if (!queued?.data?.id) throw new BackendError('OpenCode did not return a message id for the prompt');
@@ -225,5 +248,6 @@ export function createOpencodeClientV2(options) {
         },
         openEvents: (signal) => openStream('/api/event', signal),
         adaptEvent,
+        verifyChatProfile,
     });
 }

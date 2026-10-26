@@ -19,7 +19,11 @@ export class ApiError extends Error {
     }
 
     toJSON() {
-        return { error: { message: this.message, type: this.type, param: this.param, code: this.code } };
+        return { error: { message: this.message, type: this.type, param: this.param, code: this.code, ...this.timingJSON() } };
+    }
+
+    timingJSON() {
+        return Number.isSafeInteger(this.retryAfter) && this.retryAfter >= 0 ? { retry_after: this.retryAfter } : {};
     }
 }
 
@@ -51,6 +55,6 @@ export function toApiError(error) {
 
 export function sendError(res, error) {
     const apiError = toApiError(error);
-    if (apiError.retryAfter) res.set('Retry-After', String(apiError.retryAfter));
+    if (Number.isSafeInteger(apiError.retryAfter) && apiError.retryAfter >= 0) res.set('Retry-After', String(apiError.retryAfter));
     res.status(apiError.status).json(apiError.toJSON());
 }

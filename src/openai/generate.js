@@ -2,6 +2,7 @@ import { CHARS_PER_TOKEN, createLengthLimit } from './length-limit.js';
 import { createStopFilter } from './stop.js';
 import { createToolCallParser } from './tool-calls.js';
 import { estimateUsage, learnPromptOverhead, NO_USAGE } from './usage-estimate.js';
+import { ApiError } from '../server/errors.js';
 
 const STOP_REACHED = Symbol('stop-sequence');
 const LENGTH_REACHED = Symbol('max-tokens');
@@ -128,6 +129,9 @@ export async function generate({ onText: textSink = () => {}, onReasoning: reaso
     const initial = await attempt({ ...options, maxChars, onText, onReasoning });
     const forced = request.toolChoice === 'required' || (request.toolChoice && typeof request.toolChoice === 'object');
     if (initial.toolCalls.length || initial.finish === 'length' || signal.aborted || !(forced || initial.nativeToolAttempt)) return initial;
+    if (options.runner.allowCorrectiveRetry === false) {
+        throw new ApiError(502, 'The model did not return the requested client function call; strict chat does not replay requests.', { code: 'upstream_rejected' });
+    }
     const hasClientTools = request.tools.length > 0 && request.toolChoice !== 'none';
     let note = FORCED_RETRY_NOTE;
     if (initial.nativeToolAttempt && hasClientTools) {

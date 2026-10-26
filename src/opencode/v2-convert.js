@@ -41,6 +41,10 @@ export function errorFromV2(error) {
     if (!error) return undefined;
     const type = String(error.type || '');
     const data = { message: String(error.message || ''), ...(Number.isInteger(error.status) ? { statusCode: error.status } : {}) };
+    if (type) data.type = type;
+    for (const key of ['retryAfterMs', 'responseHeaders', 'resetAt']) {
+        if (error[key] !== undefined) data[key] = error[key];
+    }
     const is = (pattern) => pattern.test(type);
     let name = 'UnknownError';
     if (is(/auth/i)) name = 'ProviderAuthError';
@@ -49,7 +53,7 @@ export function errorFromV2(error) {
     else if (is(/abort|interrupt|cancel/i)) name = 'MessageAbortedError';
     else if (is(/content.?filter/i)) name = 'ContentFilterError';
     else if (is(/structured/i)) name = 'StructuredOutputError';
-    else if (data.statusCode) name = 'APIError';
+    else if (data.statusCode || type === 'provider.free-limit' || type === 'provider.quota') name = 'APIError';
     return { name, data };
 }
 
@@ -112,7 +116,7 @@ export function adaptEvent(event) {
         case 'session.retry.scheduled':
             return [{
                 type: 'session.status',
-                properties: { sessionID: data.sessionID, status: { type: 'retry', attempt: data.attempt, message: data.error?.message } },
+                properties: { sessionID: data.sessionID, status: { type: 'retry', attempt: data.attempt, message: data.error?.message, ...(data.error ? { error: errorFromV2(data.error) } : {}) } },
             }];
         case 'permission.asked':
             return data.id && data.sessionID ? [{ type: 'permission.asked', properties: { id: data.id, sessionID: data.sessionID } }] : [];

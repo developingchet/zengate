@@ -1,4 +1,4 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -11,7 +11,7 @@ import { loadConfig } from '../src/config.js';
 import { createBackend } from '../src/gateway.js';
 import { createLogger, silentLogger } from '../src/logger.js';
 import { createAttachedBackend, createManagedBackend } from '../src/opencode/backend.js';
-import { resolveOpencodeBinary, spawnCommand } from '../src/opencode/binary.js';
+import { resolveBundledOpencodeBinary, resolveOpencodeBinary, spawnCommand } from '../src/opencode/binary.js';
 import {
     backendConfig, backendEnv, createIsolatedRoot, randomPassword, recordBackendPid, removeIsolatedRoot, sweepStaleRoots, touchIsolatedRoot,
 } from '../src/opencode/isolation.js';
@@ -169,6 +169,43 @@ describe('managed backend (fake binary)', () => {
 });
 
 describe('binary resolution', () => {
+    it('fails closed when the bundled executable is absent even if PATH supplies a replacement', () => {
+        const bundled = resolveBundledOpencodeBinary();
+        const replacement = path.join(tmp, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
+        fs.writeFileSync(replacement, '');
+        const previousPath = process.env.PATH;
+        const stat = fs.statSync;
+        const mocked = mock.method(fs, 'statSync', (file, ...args) => {
+            if (file === bundled.path) throw Object.assign(new Error('missing bundle'), { code: 'ENOENT' });
+            return stat(file, ...args);
+        });
+        process.env.PATH = tmp;
+        try {
+            assert.equal(resolveOpencodeBinary('').source, 'PATH', 'control: a replacement is available to the production resolver');
+            assert.throws(() => resolveBundledOpencodeBinary(), /Bundled OpenCode CLI not found/);
+        } finally {
+            mocked.mock.restore();
+            if (previousPath === undefined) delete process.env.PATH;
+            else process.env.PATH = previousPath;
+        }
+    });
+    it('requires the bundled executable without consulting executable overrides or PATH', () => {
+        const keys = ['OPENCODE_PATH', 'PATH', 'Path', 'ComSpec', 'NODE_PATH'];
+        const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+        try {
+            for (const key of keys) process.env[key] = 'must-not-be-used-by-contract-tests';
+            const resolved = resolveBundledOpencodeBinary();
+            assert.equal(resolved.source, 'bundled');
+            assert.ok(path.isAbsolute(resolved.path));
+            assert.ok(fs.statSync(resolved.path).isFile());
+            assert.match(resolved.path, /@opencode[\\/]cli[\\/]bin[\\/]opencode\.exe$/);
+        } finally {
+            for (const key of keys) {
+                if (original[key] === undefined) delete process.env[key];
+                else process.env[key] = original[key];
+            }
+        }
+    });
     it('uses an explicit path when it is a file', () => {
         const file = path.join(tmp, 'opencode-bin');
         fs.writeFileSync(file, '');
