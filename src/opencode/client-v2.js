@@ -1,5 +1,6 @@
 import { BackendError, createHttp } from './http.js';
 import { adaptEvent, messageFromV2, providersFromModels } from './v2-convert.js';
+import { ApiError } from '../server/errors.js';
 
 const MESSAGE_PAGE = 200;
 const MAX_PAGES = 5;
@@ -88,15 +89,16 @@ export function createOpencodeClientV2(options) {
     /** Names of the agents the server knows, cached briefly (the list is static for a server). */
     async function knownAgents(signal) {
         if (agentsCache && Date.now() - agentsCache.at < AGENTS_CACHE_MS) return agentsCache.names;
-        let agents;
-        try {
-            agents = (await call('GET', '/api/agent', { signal }))?.data || [];
-        } catch (error) {
-            // Selecting an agent is optional; the session keeps its default one. A failure is not cached.
-            if (!(error instanceof BackendError) || signal?.aborted) throw error;
-            return new Set();
+        let agents = (await call('GET', '/api/agent', { signal }))?.data;
+        // V2 loads agent plugins lazily. A new server can list no agents until
+        // the model catalog has initialized its location; never cache that state.
+        if (Array.isArray(agents) && agents.length === 0) {
+            await call('GET', '/api/model', { signal });
+            agents = (await call('GET', '/api/agent', { signal }))?.data;
         }
-        const names = new Set(agents.map((agent) => agent.id || agent.name));
+        if (!Array.isArray(agents)) throw new BackendError('OpenCode did not return an agent list');
+        const names = new Set(agents.filter((agent) => agent && agent.mode !== 'subagent' && agent.hidden !== true)
+            .map((agent) => agent.id || agent.name));
         agentsCache = { at: Date.now(), names };
         return names;
     }
@@ -125,7 +127,10 @@ export function createOpencodeClientV2(options) {
      */
     async function prepare(sessionId, body, signal) {
         // An agent can carry its own model, so it is selected before the model is.
-        if (body.agent && (await knownAgents(signal)).has(body.agent)) {
+        if (body.agent) {
+            if (!(await knownAgents(signal)).has(body.agent)) {
+                throw new ApiError(503, 'The configured OPENCODE_AGENT is unavailable or incompatible with this backend.', { code: 'backend_agent_unavailable' });
+            }
             await call('POST', `/api/session/${id(sessionId)}/agent`, { body: { agent: body.agent }, signal });
         }
         const { providerID, modelID } = body.model || {};

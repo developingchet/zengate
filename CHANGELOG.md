@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+- Explain permission-denied listener failures, including Windows excluded TCP port ranges and how to choose another port (#36).
+- Preserve structured upstream quota classification and validated retry timing through the OpenCode 2 adapter. Quota exhaustion has a distinct `upstream_quota_exhausted` code; long delays and HTTP-date Retry-After values work, and unknown timing stays unknown. HTTP and streaming errors expose the same timing (#39).
+- Stop before prompt dispatch when the configured OpenCode 2 agent is unavailable or its lookup/selection fails. Document that a conversational agent cannot remove all backend context; a verified chat-only boundary remains unresolved (#38).
+
+### Changed
+- Bundle OpenCode 2.1.2 for structured quota/reset timing and refresh body-parser to 2.4.0 to address GHSA-27r3-jxmh-p828.
+- Include the Node 24 image digest, Socket CLI 2.11.3 hash lock, CodeQL upload 4.39.1 and setup-python 7.1.0 updates proposed in #26, #27 and #37.
+
 ## [1.3.1] - 2026-10-19
 
 ### Added

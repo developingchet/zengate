@@ -202,7 +202,9 @@ curl http://127.0.0.1:8083/v1/chat/completions \
 | `POST /v1/embeddings` | `404 unsupported_endpoint`: Zen serves chat models only |
 | `GET /metrics` | Request counters, latency and time-to-first-token, slot usage and the OpenCode version (needs the key). JSON by default; Prometheus text format for `?format=prometheus` or an `Accept: text/plain` scrape |
 
-Routes also work without the `/v1` prefix. Errors use the standard OpenAI envelope, `{"error": {"message", "type", "param", "code"}}`, with matching HTTP status codes (400, 401, 404, 413, 429 with `Retry-After`, 502, 503, 504).
+Routes also work without the `/v1` prefix. Errors use the standard OpenAI envelope, `{"error": {"message", "type", "param", "code"}}`, with matching HTTP status codes (400, 401, 404, 413, 429, 502, 503, 504).
+
+Upstream allowance exhaustion returns HTTP 429 with `code: "upstream_quota_exhausted"`; temporary provider throttling uses `upstream_rate_limited`. Validated provider timing appears as `Retry-After` seconds on HTTP errors and `error.retry_after` seconds in the JSON envelope, including Chat/Completions SSE errors and Responses `response.failed` events. Multi-hour delays are preserved. If timing is absent or invalid, both fields are omitted: the reset time is unknown. Structured quota classification needs OpenCode 2.1.2+ (bundled); older backends can report an unclassified 429, which remains `upstream_rate_limited`. The gateway never infers quota classification from human-readable error text.
 
 **Inputs** (validated against each model's capabilities; a model that can't take an input returns `400 unsupported_modality`):
 
@@ -255,10 +257,22 @@ Set values as environment variables or in the config file (same names; see [`con
 
 - Sessions are created with every action set to `ask`, and the gateway rejects each request, as it does with OpenCode 1.
 - `response_format` is passed to the model as an instruction, because OpenCode 2 has no native structured output. The JSON arrives when the answer is complete rather than streamed.
-- `OPENCODE_AGENT` applies only if the server has an agent of that name; otherwise the session keeps its default agent.
+- `OPENCODE_AGENT` must name an available primary agent. Missing, hidden or subagent-only agents fail before a prompt is submitted (`503 backend_agent_unavailable`); lookup or selection failures also stop dispatch. There is no silent fallback to the backend's default agent.
 - OpenCode 2 has an `execute` tool that runs scripts the model writes inside the OpenCode process. Scripts can call `fetch` on any URL without a permission request, so the gateway denies the `execute` action and the tool is not offered to the model. Browser tools are denied too (they also need a desktop app attached to the session). Every other tool, including shell, file, web and subagent tools, asks and is rejected. A later OpenCode 2 release could add a way around this, so after upgrading it, run `npm run test:leak`: it asks a model to use every tool, and to fetch a local listener, in a session with the gateway's permissions, and fails if anything ran.
 
+### Conversational context limitations
+
+The current OpenCode adapter does not provide a verified chat-only context boundary. `OPENCODE_AGENT=plan` is the default. Backend coding instructions, tool descriptions and synthetic workspace/home/runtime paths can influence or appear in model output even though tool execution is refused. Do not put secrets in agent instructions or rely on a system prompt to keep backend context confidential.
+
+A custom agent with a conversational system prompt can change its identity, but OpenCode still appends built-in environment and other instruction sources. Client system text is an additional session instruction; it does not replace them. See [OpenCode's agent documentation](https://github.com/anomalyco/opencode/blob/v2.1.2/services/www/src/docs/content/agents.mdx) and [context assembly](https://github.com/anomalyco/opencode/blob/v2.1.2/packages/core/src/session/context.ts). A custom agent alone is not a fix for instruction disclosure.
+
+OpenCode has supported plugin context hooks that can modify outgoing instructions and tools. A strict chat-only profile would need a real CLI capture against a local dummy provider, coverage of auxiliary requests and continuations, and successful real-provider compatibility tests. Removing the coding context/tools can cause Zen's free tier to refuse the request; the gateway does not bypass that restriction, substitute providers, or replay requests elsewhere. A separately authenticated text-only provider adapter would be a different product mode and is not implemented here. Issue [#38](https://github.com/developingchet/zengate/issues/38) remains open for that work.
+
+Run `node scripts/capture-context.mjs` to reproduce the custom-agent limitation with the bundled real CLI and a local dummy provider using synthetic credentials. It prints only context categories and tool names, checks that the conversational identity was applied, and demonstrates that workspace/environment context remains. It does not prove confidentiality or real Zen compatibility. Startup may refresh OpenCode's public model catalog; provider inference is restricted to the local fixture. Real-model positive/negative chat and tool-denial checks still require available upstream allowance.
+
 ## Deployment
+
+**Windows ports.** Windows can reserve TCP ranges that include 8083 or 8190. An `EACCES` bind error now identifies the host/port and suggests checking `netsh interface ipv4 show excludedportrange protocol=tcp`. Choose an available port in `PORT` (for example 9083); no port is guaranteed available on every host. The default stays 8083 so existing client and container configurations continue to work.
 
 **Docker.** The key persists in the `/data` volume. You can pass `-e API_KEY=...` instead. Publish the port on `127.0.0.1`, or put a TLS reverse proxy in front before exposing it to a network. `docker stop` waits only 10 seconds before killing the container, so pass `--stop-timeout 20` (or `stop_grace_period` in Compose) to let in-flight requests finish. The container also runs with a read-only root (`--read-only --tmpfs /tmp`), `--cap-drop ALL` and `--security-opt no-new-privileges:true`. On shutdown, `/ready` answers `503` for up to 2 seconds before the listener closes, so a load balancer polling it stops sending traffic first.
 

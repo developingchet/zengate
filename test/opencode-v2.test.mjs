@@ -94,15 +94,16 @@ describe('OpenCode 2 client', () => {
         const fresh = createOpencodeClientV2({ baseUrl: fake.url });
         fake.state.failAgents = true;
         fake.calls.length = 0;
-        await fresh.prompt('ses_1', { agent: 'plan', parts: [{ type: 'text', text: 'x' }] });
+        await assert.rejects(fresh.prompt('ses_1', { agent: 'plan', parts: [{ type: 'text', text: 'x' }] }), /failed with HTTP 500/);
         assert.equal(callsTo('POST', '/api/session/ses_1/agent').length, 0);
+        assert.equal(callsTo('POST', '/api/session/ses_1/prompt').length, 0);
         fake.state.failAgents = false;
         fake.state.agents = [{ id: 'plan' }];
         try {
             await fresh.prompt('ses_1', { agent: 'plan', parts: [{ type: 'text', text: 'x' }] });
             assert.equal(callsTo('POST', '/api/session/ses_1/agent').length, 1);
         } finally {
-            fake.state.agents = [];
+            fake.state.agents = [{ id: 'plan' }];
         }
     });
 
@@ -161,7 +162,7 @@ describe('OpenCode 2 client', () => {
         });
 
         assert.deepEqual(callsTo('POST', '/api/session/ses_1/model')[0].body, { model: { providerID: 'opencode', id: 'big-pickle', variant: 'high' } });
-        assert.equal(callsTo('POST', '/api/session/ses_1/agent').length, 0, 'an agent the server does not list is not selected');
+        assert.equal(callsTo('POST', '/api/session/ses_1/agent').length, 1);
         const instruction = callsTo('PUT', '/api/experimental/session/ses_1/instructions/entries/gateway')[0].body.value;
         assert.match(instruction, /^Be brief\.\n\nReply with only JSON matching this schema: \{"type":"object"\}$/);
         assert.deepEqual(callsTo('POST', '/api/session/ses_1/prompt')[0].body, {
@@ -201,7 +202,7 @@ describe('OpenCode 2 client', () => {
         fake.state.assistant = { id: 'msg_a1', type: 'assistant', content: [], finish: 'error', error: { type: 'provider.auth', message: 'free tier', status: 403 } };
         try {
             const { info } = await client.prompt('ses_1', { parts: [{ type: 'text', text: 'x' }] });
-            assert.deepEqual(info.error, { name: 'ProviderAuthError', data: { message: 'free tier', statusCode: 403 } });
+            assert.deepEqual(info.error, { name: 'ProviderAuthError', data: { message: 'free tier', statusCode: 403, type: 'provider.auth' } });
             assert.equal(mapModelError(info.error).throw.code, 'upstream_auth_failed');
         } finally {
             fake.state.assistant = original;
@@ -216,6 +217,32 @@ describe('OpenCode 2 client', () => {
         assert.equal(callsTo('DELETE', '/api/session/ses_1/form/frm_1').length, 1);
         assert.deepEqual(await client.pendingPermissions(), [{ id: 'per_1', sessionID: 'ses_1' }]);
         assert.deepEqual(await client.pendingQuestions(), [{ id: 'frm_1', sessionID: 'ses_1' }]);
+    });
+
+    it('never dispatches a prompt with an unavailable or incompatible configured agent', async () => {
+        for (const agents of [[], [{ id: 'missing', mode: 'subagent' }], [{ id: 'missing', hidden: true }]]) {
+            fake.state.agents = agents;
+            fake.calls.length = 0;
+            const fresh = createOpencodeClientV2({ baseUrl: fake.url });
+            await assert.rejects(fresh.prompt('ses_1', { agent: 'missing', parts: [] }), (error) => error.code === 'backend_agent_unavailable');
+            assert.equal(callsTo('POST', '/api/session/ses_1/prompt').length, 0);
+            assert.equal(callsTo('POST', '/api/session/ses_1/model').length, 0);
+        }
+        fake.state.agents = [{ id: 'plan' }];
+    });
+
+    it('initializes lazy agent plugins before declaring an agent unavailable', async () => {
+        fake.state.lazyAgents = true;
+        fake.state.modelsInitialized = false;
+        fake.state.agents = [{ id: 'plan' }];
+        fake.calls.length = 0;
+        try {
+            const fresh = createOpencodeClientV2({ baseUrl: fake.url });
+            await fresh.prompt('ses_1', { agent: 'plan', parts: [{ type: 'text', text: 'hello' }] });
+            assert.equal(callsTo('GET', '/api/agent').length, 2);
+            assert.equal(callsTo('GET', '/api/model').length, 1);
+            assert.equal(callsTo('POST', '/api/session/ses_1/agent').length, 1);
+        } finally { fake.state.lazyAgents = false; }
     });
 
     it('interrupts and deletes sessions', async () => {
@@ -300,7 +327,7 @@ describe('OpenCode 2 conversion', () => {
         assert.equal(deltas[0].partID, out[2].properties.part.id);
         assert.equal(out[2].properties.part.type, 'text');
         assert.deepEqual(out[6].properties.part, { id: 'call_1', type: 'tool', tool: 'shell', sessionID: 'ses_1', messageID: 'msg_a' });
-        assert.deepEqual(out[7].properties.status, { type: 'retry', attempt: 2, message: 'busy' });
+        assert.deepEqual(out[7].properties.status, { type: 'retry', attempt: 2, message: 'busy', error: { name: 'UnknownError', data: { message: 'busy' } } });
         assert.deepEqual(out[8].properties, { id: 'per_1', sessionID: 'ses_1' });
         assert.deepEqual(out[9].properties, { id: 'frm_1', sessionID: 'ses_1' });
     });

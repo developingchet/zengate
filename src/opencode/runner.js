@@ -55,8 +55,9 @@ export function createRunner({ getClient, hub, logger, agent }) {
             const status = event.type === 'session.status' ? event.properties?.status : null;
             if (status?.type !== 'retry') return;
             logger.debug('OpenCode is retrying the upstream request', { sessionId, attempt: status.attempt, message: status.message });
-            if (status.attempt >= MAX_UPSTREAM_RETRIES && !local.signal.aborted) {
-                local.abort(new ApiError(502, `The model provider keeps failing: ${String(status.message || 'unknown error').slice(0, 300)}`, { code: 'upstream_error' }));
+            const mapped = status.error ? mapModelError(status.error).throw : null;
+            if ((mapped?.code === 'upstream_quota_exhausted' || status.attempt >= MAX_UPSTREAM_RETRIES) && !local.signal.aborted) {
+                local.abort(mapped || new ApiError(502, `The model provider keeps failing: ${String(status.message || 'unknown error').slice(0, 300)}`, { code: 'upstream_error' }));
             }
         };
         const unsubscribe = hub.subscribe(sessionId, onEvent);

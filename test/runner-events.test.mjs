@@ -6,6 +6,7 @@ import { createRunner } from '../src/opencode/runner.js';
 import { ApiError } from '../src/server/errors.js';
 import { createLogger, silentLogger } from '../src/logger.js';
 import { waitFor } from './helpers/fake-opencode.mjs';
+import { adaptEvent } from '../src/opencode/v2-convert.js';
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -237,6 +238,31 @@ describe('runner', () => {
         });
         await assert.rejects(runCollect(runner), (error) => error.status === 502 && error.code === 'upstream_error' && /overloaded/.test(error.message));
         assert.deepEqual(log.aborted, ['ses_1']);
+    });
+
+    it('preserves structured throttling and quota timing when stopping upstream retries', async () => {
+        for (const [type, attempt, code] of [
+            ['provider.rate-limit', 3, 'upstream_rate_limited'],
+            ['provider.free-limit', 1, 'upstream_quota_exhausted'],
+            ['provider.quota', 1, 'upstream_quota_exhausted'],
+        ]) {
+            const { runner, log } = setup({ prompt: ({ emit, signal }) => {
+                for (const event of adaptEvent({ type: 'session.retry.scheduled', data: {
+                    sessionID: 'ses_1', attempt, error: { type, status: 429, message: 'private provider text', retryAfterMs: 7200000 },
+                } })) emit(event);
+                return abortable(signal);
+            } });
+            await assert.rejects(runCollect(runner), (error) => {
+                assert.equal(error.status, 429);
+                assert.equal(error.code, code);
+                assert.equal(error.toJSON().error.retry_after, 7200);
+                assert.doesNotMatch(error.message, /private/);
+                return true;
+            });
+            assert.deepEqual(log.aborted, ['ses_1']);
+            await tick();
+            assert.deepEqual(log.deleted, ['ses_1']);
+        }
     });
 
     it('stops on a native attempt to call a client function', async () => {

@@ -27,7 +27,7 @@ const MODELS = [
 export async function startFakeOpencodeV2() {
     const calls = [];
     const state = {
-        agents: [],
+        agents: [{ id: 'plan' }],
         waitStatus: 204,
         // Messages in newest-first order, as the real server lists them when asked for desc;
         // asc requests get the reverse.
@@ -53,8 +53,8 @@ export async function startFakeOpencodeV2() {
 
         switch (route) {
             case 'GET /api/info': return json(200, { version: FAKE_V2_VERSION, pid: 1, urls: [], paths: { tmp: '' } });
-            case 'GET /api/model': return json(200, { data: MODELS });
-            case 'GET /api/agent': return state.failAgents ? json(500, { _tag: 'UnknownError' }) : json(200, { data: state.agents });
+            case 'GET /api/model': state.modelsInitialized = true; return json(200, { data: MODELS });
+            case 'GET /api/agent': return state.failAgents ? json(500, { _tag: 'UnknownError' }) : json(200, { data: state.lazyAgents && !state.modelsInitialized ? [] : state.agents });
             case 'POST /api/session': sessions += 1; return json(200, { data: { id: `ses_${sessions}` } });
             case 'DELETE /api/session/:id': return empty();
             case 'POST /api/session/:id/model':

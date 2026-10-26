@@ -128,7 +128,7 @@ export function createResponseBuilder({ model, echo, emit = () => {} }) {
         },
         fail(error) {
             const apiError = toApiError(error);
-            send('response.failed', { response: snapshot('failed', { error: { code: apiError.code || 'server_error', message: apiError.message } }) });
+            send('response.failed', { response: snapshot('failed', { error: { code: apiError.code || 'server_error', message: apiError.message, ...apiError.timingJSON() } }) });
             return apiError;
         },
     };

@@ -52,7 +52,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@opencode/cli": "2.0.32",
+    "@opencode/cli": "2.1.2",
     "express": "^5.1.0"
   },
   "overrides": {

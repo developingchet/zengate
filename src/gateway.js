@@ -23,13 +23,17 @@ export function createBackend(config, logger) {
         : createManagedBackend({ opencodePath: config.OPENCODE_PATH, logger });
 }
 
-function listen(app, { PORT, HOST }) {
+export function listen(app, { PORT, HOST }) {
     return new Promise((resolve, reject) => {
         const server = app.listen(PORT, HOST);
         server.once('listening', () => resolve(server));
-        server.once('error', (error) => reject(error.code === 'EADDRINUSE'
-            ? new Error(`Port ${PORT} on ${HOST} is already in use. Stop the other process or set PORT.`)
-            : error));
+        server.once('error', (error) => {
+            if (error.code === 'EADDRINUSE') {
+                reject(new Error(`Port ${PORT} on ${HOST} is already in use. Stop the other process or set PORT.`, { cause: error }));
+            } else if (error.code === 'EACCES') {
+                reject(new Error(`Permission denied binding port ${PORT} on ${HOST}. Windows may reserve this port in an excluded TCP range; check \`netsh interface ipv4 show excludedportrange protocol=tcp\` on Windows and set PORT to an available port (for example 9083).`, { cause: error }));
+            } else reject(error);
+        });
     });
 }
 
