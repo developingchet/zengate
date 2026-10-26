@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 
@@ -25,8 +26,8 @@ function bundledBinary() {
 
 /** Contract tests must execute the installed dependency, with no environment/PATH fallback. */
 export function resolveBundledOpencodeBinary() {
-    const binary = bundledBinary();
-    if (!binary) throw new Error('Bundled OpenCode CLI not found. Run `npm ci`; contract tests do not use OPENCODE_PATH or PATH.');
+    const binary = fileURLToPath(new URL('../../node_modules/@opencode/cli/bin/opencode.exe', import.meta.url));
+    if (!isFile(binary)) throw new Error('Bundled OpenCode CLI not found. Run `npm ci`; contract tests do not use OPENCODE_PATH or PATH.');
     return { path: binary, source: 'bundled' };
 }
 

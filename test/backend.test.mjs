@@ -190,7 +190,7 @@ describe('binary resolution', () => {
         }
     });
     it('requires the bundled executable without consulting executable overrides or PATH', () => {
-        const keys = ['OPENCODE_PATH', 'PATH', 'Path', 'ComSpec'];
+        const keys = ['OPENCODE_PATH', 'PATH', 'Path', 'ComSpec', 'NODE_PATH'];
         const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
         try {
             for (const key of keys) process.env[key] = 'must-not-be-used-by-contract-tests';
