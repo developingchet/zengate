@@ -52,8 +52,19 @@ The key is stored in `/data/config.json` (mode 0600) on the volume. Everything e
 | `RATE_LIMIT_PER_MINUTE` | `120` | Per client IP (`0` turns it off). |
 | `TRUST_PROXY` | `0` | Reverse-proxy hops to trust for client IPs. |
 | `LOG_LEVEL` / `LOG_JSON` | `info` / `false` | Log verbosity, and JSON-lines output. |
+| `OPENCODE_PROFILE` | `compatible` | Set to `chat` for the opt-in strict text-only profile described below. |
 
 The full list is in the [README](https://github.com/developingchet/zengate#configuration).
+
+## Profiles and upstream limits
+
+Version 1.4.0 bundles OpenCode 2.1.2. The default `compatible` profile retains OpenCode's coding instructions and host-tool descriptions; the managed gateway rejects host-tool execution. Tool rejection does not make backend instructions confidential.
+
+For strict text-only requests, add `-e OPENCODE_PROFILE=chat` to `docker run`, or set `environment: { OPENCODE_PROFILE: chat }` in Compose. This profile selects the dedicated `zengate-chat` agent, removes backend workspace/environment context and host-tool schemas from provider input, denies permissions and disables auxiliary calls and automatic retries. Leave `OPENCODE_AGENT` at its default or use `zengate-chat`. Attached servers and runtimes other than OpenCode 2.1.2 are refused; media returns `400 unsupported_modality`.
+
+Free-provider compatibility remains unverified for this release: the October 27, 2026 live `opencode/big-pickle` checks were quota-blocked or inconclusive. Local synthetic contract checks passed; [issue #38](https://github.com/developingchet/zengate/issues/38) remains open. Strict chat surfaces provider refusal and quota errors without restoring coding context or substituting another model/provider. See the [profile documentation](https://github.com/developingchet/zengate#strict-conversational-profile) for its boundary and limitations.
+
+Upstream allowance exhaustion returns HTTP 429 with `upstream_quota_exhausted`; temporary throttling uses `upstream_rate_limited`. Validated provider timing is exposed in `Retry-After` and JSON `error.retry_after`, in seconds. Missing timing stays unknown. These limits belong to OpenCode Zen; changing gateway queue or concurrency settings does not replenish allowance.
 
 ## Image details
 

@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [1.4.0] - 2026-10-27
 
+### Known limitations
+- Real-provider acceptance for strict chat remains incomplete (#38). October 27 checks with OpenCode 2.1.2 and `opencode/big-pickle` returned quota exhaustion for ordinary chat; the live tool check was inconclusive. Synthetic local-provider contract checks pass, but do not establish free-provider compatibility.
+- The CI-only Socket CLI 2.11.3 still pins Brotli 1.2.0 and GitPython 3.2.0, which have critical/high dependency alerts. A compatible upstream update is pending; npm runtime audit results do not cover these Python dependencies.
+
 ### Fixed
 - Contract tests require and directly spawn the bundled native CLI. Environment overrides, PATH fallback and Windows command interpreters cannot replace the tested executable (CodeQL alert #26).
 - Explain permission-denied listener failures, including Windows excluded TCP port ranges and how to choose another port (#36).

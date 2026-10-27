@@ -29,13 +29,13 @@ your app ──(OpenAI API + gateway key)──▶ zengate ──▶ opencode se
 OpenCode's free Zen models only work from inside OpenCode. So this gateway does not imitate OpenCode. It **runs the real OpenCode CLI** (`opencode serve`, installed automatically as an npm dependency) as a private backend and translates between the OpenAI API and OpenCode sessions:
 
 - Every API request becomes a short-lived OpenCode session, which is deleted afterwards.
-- OpenCode runs sandboxed. It listens only on `127.0.0.1` with a random password, and its home and config directories are throwaway temp dirs, so your own OpenCode or Claude settings, agents and plugins are never loaded.
-- **OpenCode's own tools are always refused.** Every tool permission is set to "ask" and the gateway rejects each request automatically. Nothing ever runs a command, edits a file or fetches a URL on your machine.
+- The managed backend listens only on `127.0.0.1` with a random password, and its home and config directories are throwaway temp dirs, so your own OpenCode or Claude settings, agents and plugins are never loaded. This configuration isolation is not an operating-system sandbox.
+- **Managed OpenCode host tools are refused.** The default profile denies execute/browser access and asks then rejects other tool permissions; strict chat removes all host tools and denies every permission. Attached servers require their own equivalent controls (see [Attach mode](#configuration)). Attachment downloads requested by API clients are handled separately by the gateway.
 - Your API key protects *the gateway*. Nothing upstream needs a key.
 
 Trade-offs to know about:
 
-- **Prompt overhead.** Each request carries OpenCode's system prompt and tool list (roughly 6–9k input tokens, largely cache hits), and adds about 1–3 s of latency.
+- **Prompt overhead.** The default `compatible` profile carries OpenCode's system prompt and tool list (roughly 6–9k input tokens, largely cache hits), and adds about 1–3 s of latency. The opt-in [strict chat profile](#strict-conversational-profile) removes that backend context and host-tool list, but requires separate provider compatibility checks.
 - **Sampling parameters are ignored.** Settings like `temperature` and `top_p` cannot be forwarded through OpenCode. The gateway accepts them and lists them in an `x-gateway-ignored-params` response header.
 - **`max_tokens` is approximate.** OpenCode has no output limit either, so the gateway counts about four characters as a token, cuts the answer there, stops the model and reports `finish_reason: "length"`. As in OpenAI's API, `max_completion_tokens` and `max_output_tokens` include reasoning text and `max_tokens` covers only the answer. Usage for a cut answer is estimated, because OpenCode reports none for a stopped turn.
 - **Upstream terms apply.** Availability, rate limits and the model list are set by OpenCode Zen and can change at any time. Free models may have their own data policies; see the [Zen docs](https://opencode.ai/docs/zen/).
@@ -216,11 +216,11 @@ Upstream allowance exhaustion returns HTTP 429 with `code: "upstream_quota_exhau
 | Video | `video_url` | `input_video` |
 | PDF / files | `file` (`file_data` data URI) | `input_file` (`file_data` / `file_url`) |
 
-Text files (plain text, markdown, JSON, CSV and so on) are inlined as text, so every model can read them.
+These media inputs are available in the default `compatible` profile. Strict `chat` accepts text only and rejects media before downloads or model dispatch. In compatibility mode, text files (plain text, markdown, JSON, CSV and so on) are inlined as text, so every model can read them.
 
 The gateway downloads `https` attachment URLs itself (at most 16 in one request, 30 seconds each, up to 3 redirects) and passes the content on, so remote files obey `MAX_MEDIA_MB` and `MAX_BODY_MB` like inline ones. The server's `Content-Type` must match the part: an `image_url` must return an image. This direct connection does not use `HTTPS_PROXY`.
 
-**Function calling** is emulated. OpenCode sessions cannot register your functions natively, so their schemas go into the prompt and the model's calls come back as standard `tool_calls` or `function_call` items. It works reliably with `big-pickle`. If a model tries to call a function the wrong way, or ignores `tool_choice: "required"`, the gateway retries once with a correction.
+**Function calling** is emulated. OpenCode sessions cannot register your functions natively, so their schemas go into the prompt and the model's calls come back as standard `tool_calls` or `function_call` items. Results depend on the model and provider. In the default `compatible` profile, if a model tries to call a function the wrong way, or ignores `tool_choice: "required"`, the gateway retries once with a correction. Strict `chat` disables that corrective replay.
 
 **Not supported** (clear 400 error): `logprobs`, `suffix`, audio output, `file_id` references (there is no Files API), `background` responses, the Conversations API and stored prompts. Hosted tools such as `web_search` in Responses are ignored and listed in `x-gateway-ignored-params`.
 
@@ -244,9 +244,9 @@ Set values as environment variables or in the config file (same names; see [`con
 | `CORS_ORIGINS` | none | Browser origins allowed to call the API (explicit list; `*` is refused). |
 | `TRUST_PROXY` | `0` | Number of reverse-proxy hops to trust for client IPs. |
 | `LOG_LEVEL` / `LOG_JSON` | `info` / `false` | Log verbosity, and JSON-lines output. |
-| `OPENCODE_AGENT` | `plan` | The OpenCode agent each session uses. |
+| `OPENCODE_AGENT` | `plan` | Agent for compatibility mode; strict chat selects `zengate-chat`. Missing/incompatible agents fail explicitly. |
 | `OPENCODE_PROFILE` | `compatible` | `chat` enables the dedicated strict text-only conversational profile described below. |
-| `OPENCODE_PATH` | bundled | Use a different `opencode` binary, OpenCode 1 or 2. |
+| `OPENCODE_PATH` | bundled | Use a different `opencode` binary, OpenCode 1 or 2 in compatibility mode. Strict chat requires exactly OpenCode 2.1.2. |
 | `OPENCODE_SERVER_URL` | none | Attach to an existing `opencode serve` instead of starting one (see below). |
 | `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD` | `opencode` / none | Basic auth for that server. Credentials inside `OPENCODE_SERVER_URL` are refused. |
 | `ALLOW_INSECURE_BACKEND_HTTP` | `false` | Allow a non-loopback `http://` server URL. |
@@ -265,6 +265,8 @@ Set values as environment variables or in the config file (same names; see [`con
 
 Set `OPENCODE_PROFILE=chat` in the environment or config.json for text-only conversational requests. This profile uses the managed, isolated OpenCode 2.1.2 runtime and a gateway-owned `zengate-chat` agent. It refuses attached servers, other runtime versions and conflicting agent overrides. Startup and each prompt verify that the required local plugin is active; missing/incompatible profiles fail before prompt dispatch.
 
+For example, start with `OPENCODE_PROFILE=chat zengate` on Linux/macOS, or `$env:OPENCODE_PROFILE='chat'; zengate` in PowerShell. In Docker, add `-e OPENCODE_PROFILE=chat` before the image name. Leave `OPENCODE_AGENT` at its default or set it to `zengate-chat`.
+
 The profile uses OpenCode's supported session hooks to construct provider input from only a fixed conversational instruction, the caller's system text, and the caller's rendered conversation. It does not forward backend history/reminders, environment paths, skill descriptions, coding instructions or host-tool schemas. Every host tool is removed and every permission decision is denied outside the model. Title generation is local; auxiliary generation, compaction and tool continuations are blocked. Provider retries and the gateway's corrective function-call replay are disabled. Caller function calls still use the text protocol, but an uncertain call fails rather than being replayed. Media inputs return `400 unsupported_modality` in this profile.
 
 **Provider compatibility is separate.** Zen's free tier can refuse requests without its coding context/tools. A quota error or refusal is returned as an API error; the gateway does not restore the coding context, bypass provider restrictions, substitute a model/provider or replay elsewhere. Strict mode does not promise successful keyless chat on every Zen model. A separately authenticated paid Console/Go text-only adapter is a possible alternative product mode; it is not an automatic fallback or implemented here. Real-model compatibility needs available allowance and must be checked with `MODEL=big-pickle npm run test:chat-live`.
@@ -272,6 +274,8 @@ The profile uses OpenCode's supported session hooks to construct provider input 
 The default `compatible` profile retains stock OpenCode context for provider compatibility. Even a custom conversational agent can receive backend instructions and synthetic runtime paths there; tool rejection does not make those instructions confidential. Use strict chat when that context boundary is required. Never keep credentials or authorization rules in model prompts, and do not assume universal prompt secrecy.
 
 From a source checkout, `npm run test:backend-contract` checks both profiles with the real bundled CLI and a local dummy provider using synthetic credentials. It captures every provider request, asserts strict input contains no workspace/environment context or tools, and forces a valid shell call: compatibility mode must reject it, while strict mode must neither execute it nor make another provider call. It also tests ordinary strict-chat output. These are deterministic backend contract tests, not real Zen evidence. Startup may refresh OpenCode's public model catalog; fixture inference is restricted to the local provider. `npm run test:leak` remains the real-model tool-attempt check.
+
+**1.4.0 validation status.** The local provider contract checks pass with bundled OpenCode 2.1.2. The October 27, 2026 real-provider checks against `opencode/big-pickle` were inconclusive: ordinary chat returned `429 upstream_quota_exhausted`, and the tool check observed no tool attempt. Real-model acceptance in [issue #38](https://github.com/developingchet/zengate/issues/38) remains open; deterministic contract checks do not establish free-provider compatibility.
 
 Contract tests ignore `OPENCODE_PATH`, require the installed bundled CLI and launch its native executable directly without a command interpreter. Use the live test runners when deliberately evaluating an alternative `OPENCODE_PATH` runtime.
 
@@ -308,7 +312,7 @@ sha256sum -c checksums.txt
 
 - The API key is required unless you set `ALLOW_NO_AUTH`. Keys are compared in constant time, the config file is written with mode `0600`, and keys are never logged: the first start reports where the generated key was saved, not the key.
 - The gateway binds to loopback by default and warns when it listens elsewhere, because traffic is plain HTTP, so put TLS in front.
-- OpenCode tools are never executed, and OpenCode runs isolated from your home directory and configuration.
+- The managed backend isolates OpenCode from your home directory and configuration and rejects host tools. Attached servers need equivalent operator-managed permissions; see [Attach mode](#configuration).
 - Attachment URLs must be `https` and resolve to public addresses. Loopback, private, link-local and similar ranges (including IPv6 forms that embed them) are refused, which blocks SSRF into your network. The gateway fetches them itself and connects only to the address it checked, including on every redirect, so DNS rebinding cannot reach an internal host. OpenCode never sees the URL.
 - Conversation history is sent to the model as a tagged transcript. Message text, file names and tool names are escaped so they cannot fake another turn, a tool result or a function call.
 - Rate limiting, a bounded queue with a wait limit, body and attachment size limits, and per-request timeouts all apply. Requests that are uploading, queued or running are capped at `MAX_CONCURRENT + MAX_QUEUE`, which bounds the memory held by request bodies, and one client address may be uploading at most a quarter of that at once. Attachment hosts are resolved inside the request's slot and timeout, with at most two DNS lookups in flight across the gateway. Attachment URLs appear in errors and logs as their origin only, without path, query string or credentials. A request with `n` choices uses `n` concurrency slots, and slots are always released on disconnect or timeout.
@@ -323,12 +327,15 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 |---|---|
 | `401 invalid_api_key` | Send `Authorization: Bearer <key from the config file>`. |
 | `404 model_not_found` | Use an id from `GET /v1/models`. The free model list changes over time. |
-| `400 unsupported_modality` | That model can't take this input kind. Pick one that does. |
+| `400 unsupported_modality` | The model cannot take this input kind, or strict chat rejected media. Strict chat accepts text only. |
 | `429 server_busy` / `rate_limit_exceeded` | Raise `MAX_CONCURRENT` / `MAX_QUEUE` / `QUEUE_TIMEOUT_MS` / `RATE_LIMIT_PER_MINUTE`, or slow down. |
 | `400 invalid_attachment_url` | The attachment URL is not public, failed to download, or returned the wrong type. Send it as a base64 data URI instead. |
-| `429 upstream_rate_limited`, `502 upstream_*` | OpenCode Zen is limiting or failing. Retry later or try another model. |
+| `429 upstream_quota_exhausted` | Provider allowance is exhausted. Wait for the supplied reset delay; if absent, timing is unknown. The gateway does not bypass quotas. |
+| `429 upstream_rate_limited`, `502 upstream_*` | OpenCode Zen is throttling or failing. Honor `Retry-After` when present. |
+| `503 backend_agent_unavailable` / `backend_chat_profile_unavailable` | Verify the agent/profile settings and the required OpenCode version. The gateway stops before prompt dispatch. |
 | `503 backend_unavailable` | OpenCode is still starting or restarting. Check `GET /ready`. Run with `LOG_LEVEL=debug` to see OpenCode's own logs. |
 | Startup: `Port ... in use` | Another process has the port. Set `PORT`. |
+| Startup: `EACCES` / permission denied binding a port | Check Windows excluded TCP ranges (`netsh interface ipv4 show excludedportrange protocol=tcp`) and select an available `PORT`. |
 | Startup: `could not be written` | The config folder is read-only. Set `API_KEY`, or point `CONFIG_FILE` somewhere writable. |
 
 ## Development
@@ -336,6 +343,7 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 ```bash
 npm test               # unit + integration tests (fake OpenCode server)
 npm run test:coverage
+npm run test:backend-contract   # real bundled CLI, synthetic local provider
 npm run lint           # syntax, file size and hygiene checks
 GATEWAY_URL=http://127.0.0.1:8083/v1 API_KEY=sk-zg-... npm run test:live   # real models
 ```
