@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-27
+
 ### Fixed
 - Contract tests require and directly spawn the bundled native CLI. Environment overrides, PATH fallback and Windows command interpreters cannot replace the tested executable (CodeQL alert #26).
 - Explain permission-denied listener failures, including Windows excluded TCP port ranges and how to choose another port (#36).
@@ -160,7 +162,8 @@ First public release (npm only).
 - Stored responses are scoped to the API key that created them.
 - Concurrency slots are weighted by `n` and always released on timeout or disconnect. A request fails fast when the upstream keeps failing.
 
-[Unreleased]: https://github.com/developingchet/zengate/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/developingchet/zengate/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/developingchet/zengate/releases/tag/v1.4.0
 [1.3.1]: https://github.com/developingchet/zengate/releases/tag/v1.3.1
 [1.3.0]: https://github.com/developingchet/zengate/releases/tag/v1.3.0
 [1.2.0]: https://github.com/developingchet/zengate/releases/tag/v1.2.0
