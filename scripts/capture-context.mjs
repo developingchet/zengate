@@ -122,7 +122,8 @@ try {
                 tools: (body.tools || []).map((tool) => tool.function?.name || tool.name),
             };
         });
-        console.log(JSON.stringify({ gateway: '1.3.1 working tree', cli: health.version, profile: strict ? 'chat' : 'compatible', provider: 'local synthetic capture/dummy', toolAttempt, succeeded, rejected: hub.toolRejections(), requests: summary }, null, 2));
+        const gatewayVersion = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+        console.log(JSON.stringify({ gateway: `${gatewayVersion} working tree`, cli: health.version, profile: strict ? 'chat' : 'compatible', provider: 'local synthetic capture/dummy', toolAttempt, succeeded, rejected: hub.toolRejections(), requests: summary }, null, 2));
         assert.ok(summary.some((entry) => entry.conversationalIdentity), 'verify the custom agent was applied');
         assert.ok(summary.some((entry) => entry.clientInstruction), 'preserve the caller system instruction');
         if (strict) {
