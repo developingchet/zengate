@@ -26,11 +26,16 @@ npm run lint       # syntax, file size and hygiene checks
 npm test           # unit + integration tests against a fake OpenCode server
 npm run test:coverage
 npm run audit
+npm run test:backend-contract  # bundled real CLI, synthetic local provider
 ```
 
 `npm run test:live` runs an end-to-end check against real Zen models through a running gateway (`GATEWAY_URL` and `API_KEY` must be set). It is not part of CI.
 
 `npm run test:leak` starts an isolated OpenCode 2 backend, asks a real model to use every tool and fails if any ran. It is not part of CI either, so run it before merging any change to `@opencode/cli`, including Dependabot upgrades: a new release could add a tool, or a way for one to reach the network or a shell, that skips the permission check.
+
+`npm run test:backend-contract` runs in cross-platform CI. It requires the installed bundled native CLI, ignores executable overrides, and captures synthetic provider requests for both profiles, including forced shell calls. It checks the strict context boundary, continued tool denial and absence of strict tool continuations. It does not establish real-provider compatibility.
+
+`MODEL=big-pickle npm run test:chat-live` tests positive chat/coding cases and negative host/instruction-reconstruction cases against the real provider. In PowerShell, use `$env:MODEL='big-pickle'; npm run test:chat-live`. Both live runners use synthetic prompts and are outside CI. Record gateway, CLI and provider/model versions with results. A quota error, provider refusal, or a tool test with no attempted tool is inconclusive, not a pass. Do not substitute another model/provider or bypass allowance checks to claim acceptance.
 
 ## Guidelines
 
@@ -73,6 +78,18 @@ zengate keeps its dependency list small on purpose: Express, and the official `@
    ```
 
 The `release` workflow then checks that the tag matches `package.json`, runs the tests, publishes the Docker image to Docker Hub and GHCR (amd64 + arm64, scanned, signed, with an SBOM), publishes to npm with provenance and to GitHub Packages as `@developingchet/zengate`, and creates the GitHub release. A tag with a suffix such as `v1.4.0-rc.1` is published as a pre-release (npm tag `next`, no `latest` Docker tag).
+
+Before tagging, review all release-facing docs, including `DOCKERHUB.md` and `SECURITY.md`, and record outstanding verification limits. npm displays the README from the published tarball; Docker Hub's description is updated from `DOCKERHUB.md` by the release workflow. Merging documentation after publication does not update the npm README for an existing version.
+
+After a stable release, verify every publication job, the npm `latest` tag, both container registries and the GitHub release assets. Deprecate older npm versions only after confirming the replacement is available. For 1.4.0:
+
+```bash
+npm view zengate dist-tags --json   # confirm latest is 1.4.0
+npm deprecate "zengate@<1.4.0" "Unsupported version. Upgrade to zengate@1.4.0 for security updates and fixes."
+npm view zengate@1.3.1 deprecated
+```
+
+Deprecation requires maintainer authentication and may require 2FA; it adds an upgrade notice without deleting published versions. The release workflow uses trusted publishing for npm publication; deprecation is a separate maintainer action. Never put login credentials or one-time codes in repository files or PRs.
 
 ## License
 
