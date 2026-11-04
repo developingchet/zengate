@@ -4,9 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-04
+
+### Security
+- The CI-only Socket CLI moves to 2.11.6, which pins Brotli 1.2.1 (decoder out-of-bounds write, critical) and GitPython 3.2.1 (submodule path RCE, high). This clears the dependency alerts listed as a known limitation of 1.4.0. The published package and image never contained these Python dependencies.
+- Refresh `qs` to 6.17.1, `on-finished` to 2.4.2 and `encodeurl` to 2.0.1 within their existing ranges.
+
 ### Changed
-- Bundle OpenCode 2.1.4. The strict chat profile now requires exactly 2.1.4 and refuses 2.1.2; the local-provider contract checks pass for both profiles on 2.1.4.
-- CI runs the test matrix on Linux and Windows only. macOS is no longer tested in CI.
+- Bundle OpenCode 2.1.4. The strict chat profile now requires exactly 2.1.4 and refuses 2.1.2; the local-provider contract checks pass for both profiles on 2.1.4 (#46).
+- Update `docker/login-action` to 4.7.0 in the release workflow (#41).
+- CI runs the test matrix on Linux and Windows only. macOS is no longer tested in CI (#47).
 
 ### Known limitations
 - Real-provider acceptance for strict chat remains incomplete (#38). On November 4 with OpenCode 2.1.4, `npm run test:leak` against `opencode/big-pickle` passed (one `read` attempt, rejected), but the first strict-chat request returned `429 upstream_quota_exhausted` minutes after compatible-profile requests to the same model succeeded.
@@ -173,7 +180,8 @@ First public release (npm only).
 - Stored responses are scoped to the API key that created them.
 - Concurrency slots are weighted by `n` and always released on timeout or disconnect. A request fails fast when the upstream keeps failing.
 
-[Unreleased]: https://github.com/developingchet/zengate/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/developingchet/zengate/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/developingchet/zengate/releases/tag/v1.4.1
 [1.4.0]: https://github.com/developingchet/zengate/releases/tag/v1.4.0
 [1.3.1]: https://github.com/developingchet/zengate/releases/tag/v1.3.1
 [1.3.0]: https://github.com/developingchet/zengate/releases/tag/v1.3.0
