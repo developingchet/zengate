@@ -1,6 +1,6 @@
 import { it } from 'node:test';
 import assert from 'node:assert/strict';
-import plugin, { CHAT_AGENT, CHAT_SYSTEM } from '../src/opencode/chat-plugin.js';
+import plugin, { CHAT_AGENT, CHAT_RUNTIME_VERSION, CHAT_SYSTEM } from '../src/opencode/chat-plugin.js';
 
 async function fixture() {
     const hooks = new Map();
@@ -8,7 +8,7 @@ async function fixture() {
     const agents = new Map([['plan', { id: 'plan' }]]);
     let evaluate;
     const close = await plugin.setup({
-        app: { version: '2.1.2' },
+        app: { version: CHAT_RUNTIME_VERSION },
         tool: { transform: async (fn) => fn({ list: () => [...tools], remove: (id) => tools.splice(tools.findIndex((t) => t.id === id), 1) }) },
         agent: { transform: async (fn) => fn({ list: () => [...agents.values()], remove: (id) => agents.delete(id), update: (id, edit) => { const a = { id }; edit(a); agents.set(id, a); }, default: () => {} }) },
         permission: { hook: async (_, fn) => { evaluate = fn; } },
@@ -54,5 +54,7 @@ it('rebuilds model input solely from admitted caller data and blocks every auxil
 });
 
 it('rejects an unvalidated CLI runtime before installing hooks', async () => {
-    await assert.rejects(plugin.setup({ app: { version: '2.1.3' } }), /validated OpenCode 2.1.2/);
+    for (const version of ['2.1.2', '2.1.3', '2.1.5']) {
+        await assert.rejects(plugin.setup({ app: { version } }), /Strict chat requires the validated OpenCode/);
+    }
 });
