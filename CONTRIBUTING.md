@@ -19,7 +19,7 @@ npm ci
 npm start          # creates config.json with a key on first start
 ```
 
-Checks (CI runs the same ones on Linux, Windows and macOS):
+Checks (CI runs the same ones on Linux and Windows):
 
 ```bash
 npm run lint       # syntax, file size and hygiene checks
@@ -51,7 +51,7 @@ npm run test:backend-contract  # bundled real CLI, synthetic local provider
 
 - Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`, `perf:`, `ci:`.
 - Keep pull requests focused on one change, fill in the template, and make sure CI is green.
-- `main` is protected: changes land through pull requests, and CI (tests on Linux, Windows and macOS, the Docker build and scan, and CodeQL) must pass.
+- `main` is protected: changes land through pull requests, and CI (tests on Linux and Windows, the Docker build and scan, and CodeQL) must pass.
 - The maintainer aims to review pull requests within **one week**.
 
 ## Dependencies
