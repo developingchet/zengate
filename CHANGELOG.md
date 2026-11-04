@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+- Bundle OpenCode 2.1.4. The strict chat profile now requires exactly 2.1.4 and refuses 2.1.2; the local-provider contract checks pass for both profiles on 2.1.4.
+
+### Known limitations
+- Real-provider acceptance for strict chat remains incomplete (#38). On November 4 with OpenCode 2.1.4, `npm run test:leak` against `opencode/big-pickle` passed (one `read` attempt, rejected), but the first strict-chat request returned `429 upstream_quota_exhausted` minutes after compatible-profile requests to the same model succeeded.
+
 ## [1.4.0] - 2026-10-27
 
 ### Known limitations

@@ -2,7 +2,7 @@ import { execFile, spawn } from 'node:child_process';
 import { backendOrigin, createOpencodeClient } from './client.js';
 import { probeBackend } from './detect.js';
 import { createOpencodeClientV2 } from './client-v2.js';
-import { installChatProfile } from './chat-profile.js';
+import { CHAT_RUNTIME_VERSION, installChatProfile } from './chat-profile.js';
 import { resolveOpencodeBinary, spawnCommand } from './binary.js';
 import {
     backendEnv, createIsolatedRoot, HEARTBEAT_MS, randomPassword, recordBackendPid, removeIsolatedRoot, sweepStaleRoots, touchIsolatedRoot,
@@ -139,7 +139,7 @@ export function createManagedBackend({ opencodePath, profile = 'compatible', log
         client = found.client;
         version = found.health.version || null;
         if (profile === 'chat') {
-            if (client.api !== 'v2' || version !== '2.1.2') throw new Error('OPENCODE_PROFILE=chat requires the validated OpenCode 2.1.2 runtime');
+            if (client.api !== 'v2' || version !== CHAT_RUNTIME_VERSION) throw new Error(`OPENCODE_PROFILE=chat requires the validated OpenCode ${CHAT_RUNTIME_VERSION} runtime`);
             client = createOpencodeClientV2({ baseUrl: `http://127.0.0.1:${port}`, username: 'opencode', password, profile });
             await client.verifyChatProfile();
         }

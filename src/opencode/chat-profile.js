@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-export { CHAT_AGENT, CHAT_PLUGIN_ID } from './chat-plugin.js';
+export { CHAT_AGENT, CHAT_PLUGIN_ID, CHAT_RUNTIME_VERSION } from './chat-plugin.js';
 
 /** Install only our self-contained plugin into the private managed root. */
 export function installChatProfile(dirs) {

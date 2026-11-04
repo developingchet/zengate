@@ -246,7 +246,7 @@ Set values as environment variables or in the config file (same names; see [`con
 | `LOG_LEVEL` / `LOG_JSON` | `info` / `false` | Log verbosity, and JSON-lines output. |
 | `OPENCODE_AGENT` | `plan` | Agent for compatibility mode; strict chat selects `zengate-chat`. Missing/incompatible agents fail explicitly. |
 | `OPENCODE_PROFILE` | `compatible` | `chat` enables the dedicated strict text-only conversational profile described below. |
-| `OPENCODE_PATH` | bundled | Use a different `opencode` binary, OpenCode 1 or 2 in compatibility mode. Strict chat requires exactly OpenCode 2.1.2. |
+| `OPENCODE_PATH` | bundled | Use a different `opencode` binary, OpenCode 1 or 2 in compatibility mode. Strict chat requires exactly OpenCode 2.1.4. |
 | `OPENCODE_SERVER_URL` | none | Attach to an existing `opencode serve` instead of starting one (see below). |
 | `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD` | `opencode` / none | Basic auth for that server. Credentials inside `OPENCODE_SERVER_URL` are refused. |
 | `ALLOW_INSECURE_BACKEND_HTTP` | `false` | Allow a non-loopback `http://` server URL. |
@@ -263,7 +263,7 @@ Set values as environment variables or in the config file (same names; see [`con
 
 ### Strict conversational profile
 
-Set `OPENCODE_PROFILE=chat` in the environment or config.json for text-only conversational requests. This profile uses the managed, isolated OpenCode 2.1.2 runtime and a gateway-owned `zengate-chat` agent. It refuses attached servers, other runtime versions and conflicting agent overrides. Startup and each prompt verify that the required local plugin is active; missing/incompatible profiles fail before prompt dispatch.
+Set `OPENCODE_PROFILE=chat` in the environment or config.json for text-only conversational requests. This profile uses the managed, isolated OpenCode 2.1.4 runtime and a gateway-owned `zengate-chat` agent. It refuses attached servers, other runtime versions and conflicting agent overrides. Startup and each prompt verify that the required local plugin is active; missing/incompatible profiles fail before prompt dispatch.
 
 For example, start with `OPENCODE_PROFILE=chat zengate` on Linux/macOS, or `$env:OPENCODE_PROFILE='chat'; zengate` in PowerShell. In Docker, add `-e OPENCODE_PROFILE=chat` before the image name. Leave `OPENCODE_AGENT` at its default or set it to `zengate-chat`.
 

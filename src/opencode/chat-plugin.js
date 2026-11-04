@@ -1,5 +1,7 @@
-// OpenCode 2.1.2 Promise plugin. No package imports: the CLI loads this local
+// Promise plugin for the OpenCode release in CHAT_RUNTIME_VERSION. No package imports: the CLI loads this local
 // module inside its isolated home. This is an input boundary, not output filtering.
+// The only runtime whose plugin hooks this profile has been validated against.
+export const CHAT_RUNTIME_VERSION = '2.1.4';
 export const CHAT_AGENT = 'zengate-chat';
 export const CHAT_PLUGIN_ID = 'zengate.strict-chat.v1';
 export const CHAT_SYSTEM = 'You are a conversational assistant. Answer the supplied conversation directly. You have no host tools or access to a runtime environment.';
@@ -7,7 +9,7 @@ export const CHAT_SYSTEM = 'You are a conversational assistant. Answer the suppl
 export default {
     id: CHAT_PLUGIN_ID,
     async setup(ctx) {
-        if (ctx.app.version !== '2.1.2') throw new Error('Strict chat requires the validated OpenCode 2.1.2 runtime');
+        if (ctx.app.version !== CHAT_RUNTIME_VERSION) throw new Error(`Strict chat requires the validated OpenCode ${CHAT_RUNTIME_VERSION} runtime`);
         const admitted = new Map();
         const fail = () => { throw new Error('Strict chat rejected an unverified or additional model request'); };
         await ctx.tool.transform((editor) => {
