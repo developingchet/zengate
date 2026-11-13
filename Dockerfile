@@ -11,6 +11,9 @@ WORKDIR /app
 
 # The base image can lag Debian security updates. Upgrading installed packages
 # keeps fixed CVEs in libraries such as pcre2 and perl-base out of the image.
+# A build cache would otherwise reuse this layer until the base digest changes;
+# CI passes the date in APT_REFRESH so a cached upgrade is at most a day old.
+ARG APT_REFRESH
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*

@@ -78,12 +78,16 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
             type=semver,pattern={{major}},enable=${{ !contains(github.ref_name, '-') }}
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+      - name: Date the apt upgrade layer
+        id: apt
+        run: echo "refresh=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
       - name: Build for scanning (amd64)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           load: true
           tags: zengate:scan
+          build-args: APT_REFRESH=${{ steps.apt.outputs.refresh }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Scan for vulnerabilities
@@ -114,6 +118,7 @@ jobs:
           annotations: ${{ steps.meta.outputs.annotations }}
           provenance: mode=max
           sbom: true
+          build-args: APT_REFRESH=${{ steps.apt.outputs.refresh }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: SBOM (CycloneDX)
