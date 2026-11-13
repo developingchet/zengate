@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Security
+- Build the Docker image on the current `node:24-slim`, with Node.js 24.22.3 and apt 2.6.2 (CVE-2026-109518, high: remote code execution through hard link reuse when a package download is retried). zengate never runs apt, but the 1.4.1 image carries apt 2.6.1.
+- The CI-only Socket CLI moves to 2.11.11, which pins soupsieve 4.1 (GHSA-mmhr-3c5m-f64f, high). The published package and image never contained these Python dependencies.
+- Refresh `encodeurl` to 2.0.3 within its existing range.
+
+### Changed
+- Update `docker/login-action` to 4.8.0, `github/codeql-action` to 4.39.3, `sigstore/cosign-installer` to 4.1.3 and `softprops/action-gh-release` to 3.0.4 in the workflows.
+
 ## [1.4.1] - 2026-11-04
 
 ### Security
