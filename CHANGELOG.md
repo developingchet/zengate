@@ -4,8 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Security
+- Build the Docker image on the current `node:24-slim`, with Node.js 24.22.3 and apt 2.6.2 (CVE-2026-109518, high: remote code execution through hard link reuse when a package download is retried). zengate never runs apt, but the 1.4.1 image carries apt 2.6.1.
+- The CI-only Socket CLI moves to 2.11.11, which pins soupsieve 4.1 (GHSA-mmhr-3c5m-f64f, high). The published package and image never contained these Python dependencies.
+- Refresh `encodeurl` to 2.0.3 within its existing range.
+
 ### Changed
-- Bundle OpenCode 2.2.6. The strict chat profile now requires exactly 2.2.6 and refuses 2.1.4. The local-provider contract checks pass for both profiles on 2.2.6, and `npm run test:leak` against `opencode/big-pickle` found no tool execution: ten attempts across `read`, `glob`, `shell`, `webfetch`, `grep`, `websearch`, `write` and `subagent` were all rejected.
+- Bundle OpenCode 2.2.6. The strict chat profile now requires exactly 2.2.6 and refuses 2.1.4. The local-provider contract checks pass for both profiles on 2.2.6, and `npm run test:leak` against `opencode/big-pickle` found no tool execution: ten attempts across `read`, `glob`, `shell`, `webfetch`, `grep`, `websearch`, `write` and `subagent` were all rejected (#53).
+- Update `docker/login-action` to 4.8.0, `github/codeql-action` to 4.39.3, `sigstore/cosign-installer` to 4.1.3 and `softprops/action-gh-release` to 3.0.4 in the workflows.
 
 ### Known limitations
 - Real-provider acceptance for strict chat remains incomplete (#38). On November 13 with OpenCode 2.2.6, the strict-chat gateway started and verified its profile, but its first request to `opencode/big-pickle` returned `429 upstream_quota_exhausted`.
