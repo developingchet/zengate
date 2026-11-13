@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-11-13
+
 ### Security
 - Build the Docker image on the current `node:24-slim`, with Node.js 24.22.3 and apt 2.6.2 (CVE-2026-109518, high: remote code execution through hard link reuse when a package download is retried). zengate never runs apt, but the 1.4.1 image carries apt 2.6.1.
 - The CI-only Socket CLI moves to 2.11.11, which pins soupsieve 4.1 (GHSA-mmhr-3c5m-f64f, high). The published package and image never contained these Python dependencies.
@@ -192,7 +194,8 @@ First public release (npm only).
 - Stored responses are scoped to the API key that created them.
 - Concurrency slots are weighted by `n` and always released on timeout or disconnect. A request fails fast when the upstream keeps failing.
 
-[Unreleased]: https://github.com/developingchet/zengate/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/developingchet/zengate/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/developingchet/zengate/releases/tag/v1.4.2
 [1.4.1]: https://github.com/developingchet/zengate/releases/tag/v1.4.1
 [1.4.0]: https://github.com/developingchet/zengate/releases/tag/v1.4.0
 [1.3.1]: https://github.com/developingchet/zengate/releases/tag/v1.3.1
