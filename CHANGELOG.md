@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+- Bundle OpenCode 2.2.6. The strict chat profile now requires exactly 2.2.6 and refuses 2.1.4. The local-provider contract checks pass for both profiles on 2.2.6, and `npm run test:leak` against `opencode/big-pickle` found no tool execution: ten attempts across `read`, `glob`, `shell`, `webfetch`, `grep`, `websearch`, `write` and `subagent` were all rejected.
+
+### Known limitations
+- Real-provider acceptance for strict chat remains incomplete (#38). On November 13 with OpenCode 2.2.6, the strict-chat gateway started and verified its profile, but its first request to `opencode/big-pickle` returned `429 upstream_quota_exhausted`.
+
 ## [1.4.1] - 2026-11-04
 
 ### Security

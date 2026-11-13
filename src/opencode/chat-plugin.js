@@ -1,7 +1,7 @@
 // Promise plugin for the OpenCode release in CHAT_RUNTIME_VERSION. No package imports: the CLI loads this local
 // module inside its isolated home. This is an input boundary, not output filtering.
 // The only runtime whose plugin hooks this profile has been validated against.
-export const CHAT_RUNTIME_VERSION = '2.1.4';
+export const CHAT_RUNTIME_VERSION = '2.2.6';
 export const CHAT_AGENT = 'zengate-chat';
 export const CHAT_PLUGIN_ID = 'zengate.strict-chat.v1';
 export const CHAT_SYSTEM = 'You are a conversational assistant. Answer the supplied conversation directly. You have no host tools or access to a runtime environment.';
