@@ -54,7 +54,7 @@ it('rebuilds model input solely from admitted caller data and blocks every auxil
 });
 
 it('rejects an unvalidated CLI runtime before installing hooks', async () => {
-    for (const version of ['2.1.2', '2.1.3', '2.1.5']) {
+    for (const version of ['2.1.4', '2.2.5', '2.2.7']) {
         await assert.rejects(plugin.setup({ app: { version } }), /Strict chat requires the validated OpenCode/);
     }
 });

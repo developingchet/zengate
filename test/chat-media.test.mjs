@@ -16,7 +16,7 @@ it('rejects strict media before DNS, download, model lookup or backend work on b
     let backendCalls = 0;
     const config = loadConfig({}, { OPENCODE_PROFILE: 'chat', ALLOW_NO_AUTH: 'true', RATE_LIMIT_PER_MINUTE: '0' });
     const created = createApp({ config, logger: silentLogger,
-        backend: { mode: 'managed', isReady: () => true, version: () => '2.1.4' },
+        backend: { mode: 'managed', isReady: () => true, version: () => '2.2.6' },
         hub: { isConnected: () => true, toolRejections: () => 0 },
         catalog: { resolve: async () => { modelCalls += 1; return { id: 'vision-free', input: ['text', 'image', 'pdf', 'video', 'audio'] }; } },
         runner: { run: async () => { backendCalls += 1; throw new Error('unexpected backend request'); } },
