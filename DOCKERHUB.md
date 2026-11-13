@@ -63,7 +63,7 @@ The full list is in the [README](https://github.com/developingchet/zengate#confi
 
 ## Profiles and upstream limits
 
-Version 1.4.2 bundles OpenCode 2.2.6. The default `compatible` profile retains OpenCode's coding instructions and host-tool descriptions; the managed gateway rejects host-tool execution. Tool rejection does not make backend instructions confidential.
+Version 1.4.3 bundles OpenCode 2.2.6. The default `compatible` profile retains OpenCode's coding instructions and host-tool descriptions; the managed gateway rejects host-tool execution. Tool rejection does not make backend instructions confidential.
 
 For strict text-only requests, add `-e OPENCODE_PROFILE=chat` to `docker run`, or set `environment: { OPENCODE_PROFILE: chat }` in Compose. This profile selects the dedicated `zengate-chat` agent, removes backend workspace/environment context and host-tool schemas from provider input, denies permissions and disables auxiliary calls and automatic retries. Leave `OPENCODE_AGENT` at its default or use `zengate-chat`. Attached servers and runtimes other than OpenCode 2.2.6 are refused; media returns `400 unsupported_modality`.
 

@@ -4,9 +4,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-11-13
+
 ### Changed
 - Refresh the README: Docker pull and npm download badges, Mermaid diagrams for the architecture and the request flow, value ranges and formats for every setting, the routes without a `/v1` prefix, every documented error code in troubleshooting, and the proxy and CA variables passed to OpenCode.
 - Document that release signatures need cosign 3 or later, describe Docker tags by pattern instead of a fixed version, and add `API_KEYS` and `ALLOWED_HOSTS` to `config.json.example`.
+- CI and release builds rebuild the Docker image's `apt-get upgrade` layer at least once a day, so the build cache can no longer hold back Debian security updates until the next base image digest.
+- The CI-only Socket CLI moves to 2.11.13. The published package and image do not contain it.
 
 ## [1.4.2] - 2026-11-13
 
@@ -198,7 +202,8 @@ First public release (npm only).
 - Stored responses are scoped to the API key that created them.
 - Concurrency slots are weighted by `n` and always released on timeout or disconnect. A request fails fast when the upstream keeps failing.
 
-[Unreleased]: https://github.com/developingchet/zengate/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/developingchet/zengate/compare/v1.4.3...HEAD
+[1.4.3]: https://github.com/developingchet/zengate/releases/tag/v1.4.3
 [1.4.2]: https://github.com/developingchet/zengate/releases/tag/v1.4.2
 [1.4.1]: https://github.com/developingchet/zengate/releases/tag/v1.4.1
 [1.4.0]: https://github.com/developingchet/zengate/releases/tag/v1.4.0
