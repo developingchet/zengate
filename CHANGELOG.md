@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+- Refresh the README: Docker pull and npm download badges, Mermaid diagrams for the architecture and the request flow, value ranges and formats for every setting, the routes without a `/v1` prefix, every documented error code in troubleshooting, and the proxy and CA variables passed to OpenCode.
+- Document that release signatures need cosign 3 or later, describe Docker tags by pattern instead of a fixed version, and add `API_KEYS` and `ALLOWED_HOSTS` to `config.json.example`.
+
 ## [1.4.2] - 2026-11-13
 
 ### Security

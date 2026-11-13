@@ -19,11 +19,11 @@ npm ci
 npm start          # creates config.json with a key on first start
 ```
 
-Checks (CI runs the same ones on Linux and Windows):
+Checks (CI runs lint, tests with coverage and the backend contract on Linux and Windows, and the audit on Linux):
 
 ```bash
 npm run lint       # syntax, file size and hygiene checks
-npm test           # unit + integration tests against a fake OpenCode server
+npm test           # unit, integration and property-based tests against a fake OpenCode server
 npm run test:coverage
 npm run audit
 npm run test:backend-contract  # bundled real CLI, synthetic local provider
@@ -51,7 +51,7 @@ npm run test:backend-contract  # bundled real CLI, synthetic local provider
 
 - Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`, `perf:`, `ci:`.
 - Keep pull requests focused on one change, fill in the template, and make sure CI is green.
-- `main` is protected: changes land through pull requests, and CI (tests on Linux and Windows, the Docker build and scan, and CodeQL) must pass.
+- `main` is protected: changes land through pull requests with linear history, and CI (tests on Linux and Windows, the dependency audit, the Docker build and scan, and the Socket scan) must pass, with no high-severity CodeQL alerts.
 - The maintainer aims to review pull requests within **one week**.
 
 ## Dependencies
@@ -60,7 +60,8 @@ zengate keeps its dependency list small on purpose: Express, and the official `@
 
 - Every `npm ci` in CI goes through [Socket Firewall](https://docs.socket.dev/docs/socket-firewall-free), which blocks known-malicious packages, and the `socket` workflow scans dependency changes in pull requests against the Socket security policy.
 - `package.json` `overrides` swap a few polyfills in Express's dependency tree for their maintained [`@socketregistry`](https://github.com/SocketDev/socket-registry) equivalents. Keep them when updating Express, and remove any that no longer match a package in the tree.
-- Dependabot opens weekly update pull requests for npm, GitHub Actions and the Docker base image. A new `@opencode/cli` release is only proposed after it is a week old.
+- Dependabot opens weekly update pull requests for npm, GitHub Actions, the Docker base image and the hash-locked Python CI tooling (`.github/requirements/`). A new release is only proposed after it is a week old.
+- A `@opencode/cli` upgrade also needs `CHAT_RUNTIME_VERSION` in `src/opencode/chat-plugin.js` moved to the same version, or strict-chat tests fail. Run `npm run test:backend-contract` and `npm run test:leak` before raising it.
 
 ## Maintainers
 
@@ -70,23 +71,25 @@ zengate keeps its dependency list small on purpose: Express, and the official `@
 
 1. Move the **Unreleased** notes in `CHANGELOG.md` under the new version and date.
 2. Bump the version: `npm version <patch|minor|major> --no-git-tag-version`, then commit (`chore: release vX.Y.Z`) and merge to `main`.
-3. Tag the merged commit and push the tag:
+3. Tag the merged commit with an annotated tag and push it:
 
    ```bash
-   git tag vX.Y.Z
+   git tag -a vX.Y.Z -m "zengate X.Y.Z" <merge-commit-sha>
    git push origin vX.Y.Z
    ```
+
+   Version tags cannot be moved or deleted. A broken release is fixed with a new patch version.
 
 The `release` workflow then checks that the tag matches `package.json`, runs the tests, publishes the Docker image to Docker Hub and GHCR (amd64 + arm64, scanned, signed, with an SBOM), publishes to npm with provenance and to GitHub Packages as `@developingchet/zengate`, and creates the GitHub release. A tag with a suffix such as `v1.4.0-rc.1` is published as a pre-release (npm tag `next`, no `latest` Docker tag).
 
 Before tagging, review all release-facing docs, including `DOCKERHUB.md` and `SECURITY.md`, and record outstanding verification limits. npm displays the README from the published tarball; Docker Hub's description is updated from `DOCKERHUB.md` by the release workflow. Merging documentation after publication does not update the npm README for an existing version.
 
-After a stable release, verify every publication job, the npm `latest` tag, both container registries and the GitHub release assets. Deprecate older npm versions only after confirming the replacement is available. For 1.4.0:
+After a stable release, verify every publication job, the npm `latest` tag, both container registries and the GitHub release assets. Deprecate older npm versions only after confirming the replacement is available:
 
 ```bash
-npm view zengate dist-tags --json   # confirm latest is 1.4.0
-npm deprecate "zengate@<1.4.0" "Unsupported version. Upgrade to zengate@1.4.0 for security updates and fixes."
-npm view zengate@1.3.1 deprecated
+npm view zengate dist-tags --json   # confirm latest is X.Y.Z
+npm deprecate "zengate@<X.Y.Z" "Use X.Y.Z or later"
+npm view zengate@<an older version> deprecated
 ```
 
 Deprecation requires maintainer authentication and may require 2FA; it adds an upgrade notice without deleting published versions. The release workflow uses trusted publishing for npm publication; deprecation is a separate maintainer action. Never put login credentials or one-time codes in repository files or PRs.
