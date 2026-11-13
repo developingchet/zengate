@@ -1,5 +1,6 @@
 {
     "API_KEY": "",
+    "API_KEYS": [],
     "ALLOW_NO_AUTH": false,
     "HOST": "127.0.0.1",
     "PORT": 8083,
@@ -14,6 +15,7 @@
     "RESPONSES_STORE_MAX": 500,
     "RESPONSES_STORE_MB": 256,
     "CORS_ORIGINS": [],
+    "ALLOWED_HOSTS": [],
     "TRUST_PROXY": 0,
     "LOG_LEVEL": "info",
     "LOG_JSON": false,

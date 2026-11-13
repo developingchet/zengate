@@ -2,7 +2,9 @@
 
 [![CI](https://github.com/developingchet/zengate/actions/workflows/ci.yml/badge.svg)](https://github.com/developingchet/zengate/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/zengate)](https://www.npmjs.com/package/zengate)
+[![npm downloads](https://img.shields.io/npm/dm/zengate)](https://www.npmjs.com/package/zengate)
 [![Docker Hub](https://img.shields.io/docker/v/developingchet/zengate?label=docker&sort=semver)](https://hub.docker.com/r/developingchet/zengate)
+[![Docker Pulls](https://img.shields.io/docker/pulls/developingchet/zengate)](https://hub.docker.com/r/developingchet/zengate)
 [![Socket](https://badge.socket.dev/npm/package/zengate/latest)](https://socket.dev/npm/package/zengate/overview/latest)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/developingchet/zengate/badge)](https://scorecard.dev/viewer/?uri=github.com/developingchet/zengate)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -10,8 +12,11 @@
 An **OpenAI-compatible API for OpenCode's free Zen models: no Zen account or upstream API key needed.**
 Point any OpenAI SDK or tool at it and use models like `big-pickle`. It supports Chat Completions, the Responses API, streaming, function calling, JSON output and image, audio, video and PDF input.
 
-```
-your app ──(OpenAI API + gateway key)──▶ zengate ──▶ opencode serve (private, isolated) ──▶ OpenCode Zen free models
+```mermaid
+flowchart LR
+    app["Your app<br/>(any OpenAI SDK or tool)"] -->|"OpenAI API + gateway key"| zg["zengate"]
+    zg -->|"loopback, random password"| oc["opencode serve<br/>(private, isolated)"]
+    oc --> zen["OpenCode Zen<br/>free models"]
 ```
 
 - [How it works](#how-it-works-and-why-it-is-keyless)
@@ -19,6 +24,7 @@ your app ──(OpenAI API + gateway key)──▶ zengate ──▶ opencode se
 - [Use it from your client](#use-it-from-your-client)
 - [API compatibility](#api-compatibility)
 - [Configuration](#configuration)
+- [Strict conversational profile](#strict-conversational-profile)
 - [Deployment](#deployment)
 - [Security](#security)
 - [Troubleshooting](#troubleshooting)
@@ -30,8 +36,28 @@ OpenCode's free Zen models only work from inside OpenCode. So this gateway does 
 
 - Every API request becomes a short-lived OpenCode session, which is deleted afterwards.
 - The managed backend listens only on `127.0.0.1` with a random password, and its home and config directories are throwaway temp dirs, so your own OpenCode or Claude settings, agents and plugins are never loaded. This configuration isolation is not an operating-system sandbox.
-- **Managed OpenCode host tools are refused.** The default profile denies execute/browser access and asks then rejects other tool permissions; strict chat removes all host tools and denies every permission. Attached servers require their own equivalent controls (see [Attach mode](#configuration)). Attachment downloads requested by API clients are handled separately by the gateway.
+- **Managed OpenCode host tools are refused.** The default profile denies execute/browser access and asks then rejects other tool permissions; strict chat removes all host tools and denies every permission. Attached servers require their own equivalent controls (see [Attach mode](#attach-mode)). Attachment downloads requested by API clients are handled separately by the gateway.
 - Your API key protects *the gateway*. Nothing upstream needs a key.
+
+One request, end to end:
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant G as zengate
+    participant O as opencode serve (127.0.0.1)
+    participant Z as OpenCode Zen
+    C->>G: POST /v1/chat/completions (Bearer key)
+    G->>G: auth, rate limit, queue slot, parse, build prompt
+    G->>O: create session (tool permissions: ask, execute/browser: deny)
+    G->>O: send prompt
+    O->>Z: model request
+    Z-->>O: tokens
+    O-->>G: events (text, reasoning, permission requests)
+    G->>O: reject every tool permission
+    G-->>C: OpenAI response or SSE chunks
+    G->>O: delete session
+```
 
 Trade-offs to know about:
 
@@ -66,7 +92,7 @@ docker run -d --name zengate -p 127.0.0.1:8083:8083 -v zengate:/data developingc
 docker exec zengate node index.js setup --show   # prints the generated key
 ```
 
-Images are published for `linux/amd64` and `linux/arm64`, tagged `latest`, `1`, `1.4` and `1.4.0`.
+Images are published for `linux/amd64` and `linux/arm64`. Each release is tagged with its exact version (for example `1.4.2`) and moves `1.4`, `1` and `latest`; pre-releases get only their exact version tag.
 
 The same image is on GitHub Container Registry as `ghcr.io/developingchet/zengate`, and the npm package is on GitHub Packages as `@developingchet/zengate`. Installing from GitHub Packages needs a GitHub token, so npmjs.com and Docker Hub remain the simplest sources.
 
@@ -103,16 +129,19 @@ npm start
 
 ### First start
 
-The gateway creates a config file with a random API key and says where it is. The key itself is not printed, so it does not end up in service logs:
+The gateway creates a config file with a random API key and says where it is. The key itself is not printed, so it does not end up in service logs. Abridged output:
 
 ```
   Created a gateway API key and saved it to /home/you/.config/zengate/config.json.
   Use it as the OpenAI API key in your client. To see it, run `zengate setup --show`
   or read API_KEY from that file; `zengate setup --rotate` replaces it.
 
+OpenCode 2.2.6 backend ready (managed, isolated, tools disabled)
 OpenAI-compatible API on http://127.0.0.1:8083/v1 (auth: API key)
-7 models: big-pickle, ...
+9 models: big-pickle, ...
 ```
+
+The model count and list come live from OpenCode Zen and change over time.
 
 In Docker, run `docker exec zengate node index.js setup --show`; under systemd, read `/var/lib/zengate/config.json` with `sudo`.
 
@@ -135,7 +164,8 @@ zengate setup            # create a key if none exists
 zengate setup --rotate   # replace the key
 zengate setup --show     # print the saved key
 zengate setup --print    # print a fresh key without saving it (for env vars and secret stores)
-zengate --help
+zengate --help           # also -h or help
+zengate --version        # also -v or version
 ```
 
 ### Running without a key
@@ -197,12 +227,12 @@ curl http://127.0.0.1:8083/v1/chat/completions \
 | `POST /v1/responses` | Streaming with the standard event sequence, `instructions`, `previous_response_id`, `item_reference`, `function` and `custom` tools, `text.format`, `reasoning.effort` / `reasoning` summary items, `store` |
 | `GET` / `DELETE /v1/responses/{id}` | Stored in memory for 1 hour, within `RESPONSES_STORE_MAX` entries and `RESPONSES_STORE_MB` |
 | `GET /v1/models`, `GET /v1/models/{id}` | Live list from OpenCode |
-| `GET /health`, `GET /ready` | Public liveness and readiness probes (`/ready` answers `503` while starting or shutting down) |
+| `GET /health`, `GET /ready` | Public liveness and readiness probes, with no `/v1` prefix (`/ready` answers `503` while starting or shutting down) |
 | `POST /v1/completions` | Legacy text completions: `prompt` as a string or list of strings, `n`, `stop`, `max_tokens`, `echo`, streaming. The model is asked to continue the text, so it behaves like a chat model, not a base model. Without `max_tokens` the length is not limited (OpenAI defaults to 16) |
 | `POST /v1/embeddings` | `404 unsupported_endpoint`: Zen serves chat models only |
-| `GET /metrics` | Request counters, latency and time-to-first-token, slot usage and the OpenCode version (needs the key). JSON by default; Prometheus text format for `?format=prometheus` or an `Accept: text/plain` scrape |
+| `GET /metrics` | Request counters, latency and time-to-first-token, slot usage and the OpenCode version (needs the key, no `/v1` prefix). JSON by default; Prometheus text format for `?format=prometheus` or an `Accept: text/plain` scrape |
 
-Routes also work without the `/v1` prefix. Errors use the standard OpenAI envelope, `{"error": {"message", "type", "param", "code"}}`, with matching HTTP status codes (400, 401, 404, 413, 429, 502, 503, 504).
+The `/v1` routes also work without the prefix; `/health`, `/ready` and `/metrics` exist only without it. Errors use the standard OpenAI envelope, `{"error": {"message", "type", "param", "code"}}`, with matching HTTP status codes (400, 401, 403, 404, 413, 429, 500, 502, 503, 504). An unknown path returns `404 unknown_url`.
 
 Upstream allowance exhaustion returns HTTP 429 with `code: "upstream_quota_exhausted"`; temporary provider throttling uses `upstream_rate_limited`. Validated provider timing appears as `Retry-After` seconds on HTTP errors and `error.retry_after` seconds in the JSON envelope, including Chat/Completions SSE errors and Responses `response.failed` events. Multi-hour delays are preserved. If timing is absent or invalid, both fields are omitted: the reset time is unknown. Structured quota classification needs OpenCode 2.1.2+ (bundled); older backends can report an unclassified 429, which remains `upstream_rate_limited`. The gateway never infers quota classification from human-readable error text.
 
@@ -212,9 +242,9 @@ Upstream allowance exhaustion returns HTTP 429 with `code: "upstream_quota_exhau
 |---|---|---|
 | Text | `text` parts | `input_text` |
 | Images | `image_url` (data URI or https) | `input_image` |
-| Audio | `input_audio` (base64) | `input_audio` |
-| Video | `video_url` | `input_video` |
-| PDF / files | `file` (`file_data` data URI) | `input_file` (`file_data` / `file_url`) |
+| Audio | `input_audio` (base64 `data` and `format`) | `input_audio` |
+| Video | `video_url` (data URI or https) | `input_video` |
+| PDF / files | `file` (`file_data` as a data URI, or bare base64 with a `filename`; or an https `file_url`) | `input_file` (`file_data` / `file_url`) |
 
 These media inputs are available in the default `compatible` profile. Strict `chat` accepts text only and rejects media before downloads or model dispatch. In compatibility mode, text files (plain text, markdown, JSON, CSV and so on) are inlined as text, so every model can read them.
 
@@ -226,37 +256,45 @@ The gateway downloads `https` attachment URLs itself (at most 16 in one request,
 
 ## Configuration
 
-Set values as environment variables or in the config file (same names; see [`config.json.example`](config.json.example)). Environment variables win. Invalid values stop startup with a clear message.
+Set values as environment variables or in the config file (same names; see [`config.json.example`](config.json.example)). Environment variables win. Invalid values stop startup with a message that names every problem, and so do unknown keys in the config file (`$schema` is allowed).
 
-| Setting | Default | Meaning |
-|---|---|---|
-| `API_KEY` / `API_KEYS` | generated | Gateway key(s), at least 16 characters. `API_KEYS` takes a list for rotation. |
-| `ALLOW_NO_AUTH` | `false` | Serve without any key (explicit opt-out). Requests must then use an IP address, `localhost` or a name in `ALLOWED_HOSTS` as their Host, which stops web pages from reaching the gateway through DNS rebinding. |
-| `ALLOWED_HOSTS` | none | Extra Host names accepted while `ALLOW_NO_AUTH` is on, such as the name a reverse proxy forwards. |
-| `HOST` / `PORT` | `127.0.0.1` / `8083` | Listen address. |
-| `MAX_CONCURRENT` / `MAX_QUEUE` | `8` / `32` | Parallel generations, and how many requests may wait (then `429`). |
-| `QUEUE_TIMEOUT_MS` | `30000` | How long a request may wait for a slot (then `429`). Keep it below your proxy's response timeout. |
-| `RATE_LIMIT_PER_MINUTE` | `120` | Per client IP (`0` turns it off). |
-| `REQUEST_TIMEOUT_MS` | `300000` | Per generation, counted from when it gets a slot (then `504`). |
-| `SHUTDOWN_TIMEOUT_MS` | `10000` | How long a shutdown waits for in-flight requests. Give Docker or systemd at least 5 seconds more. |
-| `MAX_BODY_MB` / `MAX_MEDIA_MB` | `25` / `20` | Request body limit, and the limit per attachment. |
-| `RESPONSES_STORE_MAX` / `RESPONSES_STORE_MB` | `500` / `256` | Stored responses for `previous_response_id`, by count and approximate memory (`RESPONSES_STORE_MAX=0` turns storage off). |
-| `CORS_ORIGINS` | none | Browser origins allowed to call the API (explicit list; `*` is refused). |
-| `TRUST_PROXY` | `0` | Number of reverse-proxy hops to trust for client IPs. |
-| `LOG_LEVEL` / `LOG_JSON` | `info` / `false` | Log verbosity, and JSON-lines output. |
-| `OPENCODE_AGENT` | `plan` | Agent for compatibility mode; strict chat selects `zengate-chat`. Missing/incompatible agents fail explicitly. |
-| `OPENCODE_PROFILE` | `compatible` | `chat` enables the dedicated strict text-only conversational profile described below. |
-| `OPENCODE_PATH` | bundled | Use a different `opencode` binary, OpenCode 1 or 2 in compatibility mode. Strict chat requires exactly OpenCode 2.2.6. |
-| `OPENCODE_SERVER_URL` | none | Attach to an existing `opencode serve` instead of starting one (see below). |
-| `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD` | `opencode` / none | Basic auth for that server. Credentials inside `OPENCODE_SERVER_URL` are refused. |
-| `ALLOW_INSECURE_BACKEND_HTTP` | `false` | Allow a non-loopback `http://` server URL. |
-| `CONFIG_FILE` | see [First start](#first-start) | Where the config file lives (environment variable only). |
+| Setting | Default | Range | Meaning |
+|---|---|---|---|
+| `API_KEY` / `API_KEYS` | generated | 16+ chars | Gateway key(s). `API_KEYS` takes a list for rotation. Well-known placeholders such as `change-me` are refused. |
+| `ALLOW_NO_AUTH` | `false` | | Serve without any key (explicit opt-out). Requests must then use an IP address, `localhost`, a `*.localhost` name or a name in `ALLOWED_HOSTS` as their Host (`403 host_not_allowed` otherwise), which stops web pages from reaching the gateway through DNS rebinding. `/health` and `/ready` are exempt. |
+| `ALLOWED_HOSTS` | none | list | Extra Host names accepted while `ALLOW_NO_AUTH` is on, such as the name a reverse proxy forwards. |
+| `HOST` / `PORT` | `127.0.0.1` / `8083` | port 1–65535 | Listen address. |
+| `MAX_CONCURRENT` / `MAX_QUEUE` | `8` / `32` | 1–64 / 0–1000 | Parallel generations, and how many requests may wait (then `429`). |
+| `QUEUE_TIMEOUT_MS` | `30000` | 1000–3600000 | How long a request may wait for a slot (then `429`). Keep it below your proxy's response timeout. |
+| `RATE_LIMIT_PER_MINUTE` | `120` | 0–100000 | Per client IP; IPv6 clients count per /64 network. `0` turns it off. |
+| `REQUEST_TIMEOUT_MS` | `300000` | 10000–3600000 | Per generation, counted from when it gets a slot (then `504`). |
+| `SHUTDOWN_TIMEOUT_MS` | `10000` | 1000–3600000 | How long a shutdown waits for in-flight requests. Give Docker or systemd at least 5 seconds more. |
+| `MAX_BODY_MB` / `MAX_MEDIA_MB` | `25` / `20` | 1–200 / 1–100 | Request body limit, and the limit per attachment. |
+| `RESPONSES_STORE_MAX` / `RESPONSES_STORE_MB` | `500` / `256` | 0–100000 / 1–65536 | Stored responses for `previous_response_id`, by count and approximate memory. `RESPONSES_STORE_MAX=0` turns storage off; a single response larger than about 4 MB is not stored. |
+| `CORS_ORIGINS` | none | list | Browser origins allowed to call the API (explicit list; `*` is refused). Preflight `OPTIONS` requests answer `204`. |
+| `TRUST_PROXY` | `0` | 0–10 or boolean | Number of reverse-proxy hops to trust for client IPs (`true` means 1). |
+| `LOG_LEVEL` / `LOG_JSON` | `info` / `false` | `debug`, `info`, `warn`, `error` | Log verbosity, and JSON-lines output. |
+| `OPENCODE_AGENT` | `plan` | `[A-Za-z0-9_.-]`, 1–64 chars | Agent for compatibility mode; strict chat selects `zengate-chat`. Missing/incompatible agents fail explicitly. |
+| `OPENCODE_PROFILE` | `compatible` | `compatible`, `chat` | `chat` enables the [strict conversational profile](#strict-conversational-profile). |
+| `OPENCODE_PATH` | bundled | | A path or command name for a different `opencode` binary, OpenCode 1 or 2 in compatibility mode. Unset, the bundled CLI is used, then `opencode` on `PATH`. Strict chat requires exactly OpenCode 2.2.6. |
+| `OPENCODE_SERVER_URL` | none | | Attach to an existing `opencode serve` instead of starting one (see [Attach mode](#attach-mode)). |
+| `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD` | `opencode` / none | | Basic auth for that server. Credentials inside `OPENCODE_SERVER_URL` are refused. |
+| `ALLOW_INSECURE_BACKEND_HTTP` | `false` | | Allow a non-loopback `http://` server URL. |
+| `CONFIG_FILE` | see [First start](#first-start) | | Where the config file lives (environment variable only). |
 
-**Attach mode.** `OPENCODE_SERVER_URL` uses a server you run yourself. The gateway can only reject tool calls that server *asks* permission for; that happens in its own sessions and their subagents. It trusts the server's own permission config, plugins and MCP servers. If that config allows tools without asking, they will run. On OpenCode 2 this includes "always allow" rules saved for the server's project, which apply after the gateway's session rules and win over them; the `execute` tool and its `fetch` are reachable unless the server denies that action. Use it only with a server configured like the managed one: every permission set to `"ask"`, and `experimental.continue_loop_on_deny` set to `true` so a rejected tool does not end the turn with an empty reply. The managed default is safer. Remote servers must use `https://` unless you set `ALLOW_INSECURE_BACKEND_HTTP`.
+Value formats: booleans accept `1`/`0`, `true`/`false`, `yes`/`no` and `on`/`off`. Lists are comma-separated in the environment (`CORS_ORIGINS=https://a.example,https://b.example`) and JSON arrays in the config file.
 
-**OpenCode versions.** The bundled backend is OpenCode 2 (the `@opencode/cli` package). The gateway also works with OpenCode 1 and tells the two apart by how the backend answers, whether it starts a binary (`OPENCODE_PATH`) or attaches to a server (`OPENCODE_SERVER_URL`). With OpenCode 2:
+The managed backend gets a clean environment. Only system basics and these host variables pass through to OpenCode: `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` (and their lowercase forms), `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE` and `SSL_CERT_DIR`. Use them when Zen is reachable only through a proxy or a TLS-inspecting gateway.
 
-- Sessions are created with every action set to `ask`, and the gateway rejects each request, as it does with OpenCode 1.
+### Attach mode
+
+`OPENCODE_SERVER_URL` uses a server you run yourself. The gateway can only reject tool calls that server *asks* permission for; that happens in its own sessions and their subagents. It trusts the server's own permission config, plugins and MCP servers. If that config allows tools without asking, they will run. On OpenCode 2 this includes "always allow" rules saved for the server's project, which apply after the gateway's session rules and win over them; the `execute` tool and its `fetch` are reachable unless the server denies that action. Use it only with a server configured like the managed one: every permission set to `"ask"`, and `experimental.continue_loop_on_deny` set to `true` so a rejected tool does not end the turn with an empty reply. The managed default is safer. Remote servers must use `https://` unless you set `ALLOW_INSECURE_BACKEND_HTTP`.
+
+### OpenCode versions
+
+The bundled backend is OpenCode 2 (the `@opencode/cli` package). The gateway also works with OpenCode 1 and tells the two apart by how the backend answers, whether it starts a binary (`OPENCODE_PATH`) or attaches to a server (`OPENCODE_SERVER_URL`). With OpenCode 2:
+
+- Sessions are created with every action set to `ask`, except `execute` and `browser`, which are denied (see below). The gateway rejects each permission request, as it does with OpenCode 1.
 - `response_format` is passed to the model as an instruction, because OpenCode 2 has no native structured output. The JSON arrives when the answer is complete rather than streamed.
 - `OPENCODE_AGENT` must name an available primary agent. Missing, hidden or subagent-only agents fail before a prompt is submitted (`503 backend_agent_unavailable`); lookup or selection failures also stop dispatch. There is no silent fallback to the backend's default agent.
 - OpenCode 2 has an `execute` tool that runs scripts the model writes inside the OpenCode process. Scripts can call `fetch` on any URL without a permission request, so the gateway denies the `execute` action and the tool is not offered to the model. Browser tools are denied too (they also need a desktop app attached to the session). Every other tool, including shell, file, web and subagent tools, asks and is rejected. A later OpenCode 2 release could add a way around this, so after upgrading it, run `npm run test:leak`: it asks a model to use every tool, and to fetch a local listener, in a session with the gateway's permissions, and fails if anything ran.
@@ -281,9 +319,9 @@ Contract tests ignore `OPENCODE_PATH`, require the installed bundled CLI and lau
 
 ## Deployment
 
-**Windows ports.** Windows can reserve TCP ranges that include 8083 or 8190. An `EACCES` bind error now identifies the host/port and suggests checking `netsh interface ipv4 show excludedportrange protocol=tcp`. Choose an available port in `PORT` (for example 9083); no port is guaranteed available on every host. The default stays 8083 so existing client and container configurations continue to work.
+**Windows ports.** Windows can reserve TCP ranges that include 8083. An `EACCES` bind error names the host and port and suggests checking `netsh interface ipv4 show excludedportrange protocol=tcp`. Choose an available port in `PORT` (for example 9083).
 
-**Docker.** The key persists in the `/data` volume. You can pass `-e API_KEY=...` instead. Publish the port on `127.0.0.1`, or put a TLS reverse proxy in front before exposing it to a network. `docker stop` waits only 10 seconds before killing the container, so pass `--stop-timeout 20` (or `stop_grace_period` in Compose) to let in-flight requests finish. The container also runs with a read-only root (`--read-only --tmpfs /tmp`), `--cap-drop ALL` and `--security-opt no-new-privileges:true`. On shutdown, `/ready` answers `503` for up to 2 seconds before the listener closes, so a load balancer polling it stops sending traffic first.
+**Docker.** The key persists in the `/data` volume. You can pass `-e API_KEY=...` instead. Publish the port on `127.0.0.1`, or put a TLS reverse proxy in front before exposing it to a network. `docker stop` waits only 10 seconds before killing the container, so pass `--stop-timeout 20` (or `stop_grace_period` in Compose) to let in-flight requests finish. The image runs as the unprivileged `node` user and works with a read-only root (`--read-only --tmpfs /tmp`), `--cap-drop ALL` and `--security-opt no-new-privileges:true`, as in the Compose example above. On shutdown, `/ready` answers `503` for up to 2 seconds before the listener closes, so a load balancer polling it stops sending traffic first.
 
 **systemd.** See [`deploy/zengate.service`](deploy/zengate.service). It runs as an unprivileged user with a hardened sandbox and a system-call filter (`@system-service`), and the key goes in `/var/lib/zengate/config.json`.
 
@@ -291,7 +329,7 @@ Contract tests ignore `OPENCODE_PATH`, require the installed bundled CLI and lau
 
 ### Verifying releases
 
-Docker images are signed with [cosign](https://github.com/sigstore/cosign) (keyless, from this repository's release workflow) and carry a CycloneDX SBOM attestation:
+Docker images are signed with [cosign](https://github.com/sigstore/cosign) (keyless, from this repository's release workflow) and carry a CycloneDX SBOM attestation. Current releases are signed with cosign 3, whose signature and bundle format cosign 2 cannot read, so verify with cosign 3 or later:
 
 ```bash
 cosign verify developingchet/zengate:1 \
@@ -312,7 +350,7 @@ sha256sum -c checksums.txt
 
 - The API key is required unless you set `ALLOW_NO_AUTH`. Keys are compared in constant time, the config file is written with mode `0600`, and keys are never logged: the first start reports where the generated key was saved, not the key.
 - The gateway binds to loopback by default and warns when it listens elsewhere, because traffic is plain HTTP, so put TLS in front.
-- The managed backend isolates OpenCode from your home directory and configuration and rejects host tools. Attached servers need equivalent operator-managed permissions; see [Attach mode](#configuration).
+- The managed backend isolates OpenCode from your home directory and configuration and rejects host tools. Attached servers need equivalent operator-managed permissions; see [Attach mode](#attach-mode).
 - Attachment URLs must be `https` and resolve to public addresses. Loopback, private, link-local and similar ranges (including IPv6 forms that embed them) are refused, which blocks SSRF into your network. The gateway fetches them itself and connects only to the address it checked, including on every redirect, so DNS rebinding cannot reach an internal host. OpenCode never sees the URL.
 - Conversation history is sent to the model as a tagged transcript. Message text, file names and tool names are escaped so they cannot fake another turn, a tool result or a function call.
 - Rate limiting, a bounded queue with a wait limit, body and attachment size limits, and per-request timeouts all apply. Requests that are uploading, queued or running are capped at `MAX_CONCURRENT + MAX_QUEUE`, which bounds the memory held by request bodies, and one client address may be uploading at most a quarter of that at once. Attachment hosts are resolved inside the request's slot and timeout, with at most two DNS lookups in flight across the gateway. Attachment URLs appear in errors and logs as their origin only, without path, query string or credentials. A request with `n` choices uses `n` concurrency slots, and slots are always released on disconnect or timeout.
@@ -326,12 +364,20 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 | Symptom | Fix |
 |---|---|
 | `401 invalid_api_key` | Send `Authorization: Bearer <key from the config file>`. |
+| `403 host_not_allowed` | Auth is off and the request's Host is not an IP address or `localhost`. Add the name to `ALLOWED_HOSTS`. |
 | `404 model_not_found` | Use an id from `GET /v1/models`. The free model list changes over time. |
+| `404 unknown_url` | Check the path. `/health`, `/ready` and `/metrics` have no `/v1` prefix. |
+| `413 request_too_large` | The body exceeds `MAX_BODY_MB`. |
 | `400 unsupported_modality` | The model cannot take this input kind, or strict chat rejected media. Strict chat accepts text only. |
-| `429 server_busy` / `rate_limit_exceeded` | Raise `MAX_CONCURRENT` / `MAX_QUEUE` / `QUEUE_TIMEOUT_MS` / `RATE_LIMIT_PER_MINUTE`, or slow down. |
+| `400 attachment_too_large` | An attachment exceeds `MAX_MEDIA_MB`. |
 | `400 invalid_attachment_url` | The attachment URL is not public, failed to download, or returned the wrong type. Send it as a base64 data URI instead. |
+| `400 previous_response_not_found` | The stored response expired (1 hour), was evicted, was created with another key or with `store: false`, or storage is off. |
+| `400 context_length_exceeded` | The conversation is too long for the model. Trim history or pick a model with a larger context. |
+| `400 upstream_rejected` / `backend_rejected` | The model provider or OpenCode refused the request as sent; the message gives the reason. |
+| `429 server_busy` / `rate_limit_exceeded` | Raise `MAX_CONCURRENT` / `MAX_QUEUE` / `QUEUE_TIMEOUT_MS` / `RATE_LIMIT_PER_MINUTE`, or slow down. |
 | `429 upstream_quota_exhausted` | Provider allowance is exhausted. Wait for the supplied reset delay; if absent, timing is unknown. The gateway does not bypass quotas. |
 | `429 upstream_rate_limited`, `502 upstream_*` | OpenCode Zen is throttling or failing. Honor `Retry-After` when present. |
+| `502 structured_output_failed` | The model did not return JSON matching `response_format` / `text.format`. Retry, simplify the schema, or try another model. |
 | `503 backend_agent_unavailable` / `backend_chat_profile_unavailable` | Verify the agent/profile settings and the required OpenCode version. The gateway stops before prompt dispatch. |
 | `503 backend_unavailable` | OpenCode is still starting or restarting. Check `GET /ready`. Run with `LOG_LEVEL=debug` to see OpenCode's own logs. |
 | Startup: `Port ... in use` | Another process has the port. Set `PORT`. |
@@ -341,18 +387,21 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 ## Development
 
 ```bash
-npm test               # unit + integration tests (fake OpenCode server)
+npm test                        # unit, integration and property-based tests (fake OpenCode server)
 npm run test:coverage
+npm run lint                    # syntax, file size and hygiene checks
+npm run audit                   # npm audit of production dependencies
 npm run test:backend-contract   # real bundled CLI, synthetic local provider
-npm run lint           # syntax, file size and hygiene checks
-GATEWAY_URL=http://127.0.0.1:8083/v1 API_KEY=sk-zg-... npm run test:live   # real models
+npm run test:leak               # real model tries every tool; fails if anything ran
+MODEL=big-pickle npm run test:chat-live                                     # strict chat against a real model
+GATEWAY_URL=http://127.0.0.1:8083/v1 API_KEY=sk-zg-... npm run test:live   # a running gateway, real models
 ```
 
 Code map:
-- `index.js` and `src/cli.js`: the `zengate` command.
-- `src/opencode/`: backend supervisor, HTTP client, event hub, session runner and model catalog.
-- `src/openai/`: request parsing, prompt building, streaming, and the Chat and Responses handlers.
-- `src/server/`: Express app, auth, limits and errors.
+- `index.js` and `src/cli.js`: the `zengate` command; `src/config.js`: settings and validation.
+- `src/opencode/`: backend supervisor, isolation, HTTP client, event hub, session runner, model catalog and the strict-chat plugin.
+- `src/openai/`: request parsing, prompt building, media and attachment downloads, streaming, and the Chat, Responses and Completions handlers.
+- `src/server/`: Express app, auth, CORS, limits and errors.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose changes and cut releases, and [CHANGELOG.md](CHANGELOG.md) for release notes.
 

@@ -1,5 +1,10 @@
 # zengate
 
+[![Docker Pulls](https://img.shields.io/docker/pulls/developingchet/zengate)](https://hub.docker.com/r/developingchet/zengate)
+[![Image Version](https://img.shields.io/docker/v/developingchet/zengate?sort=semver)](https://hub.docker.com/r/developingchet/zengate/tags)
+[![npm downloads](https://img.shields.io/npm/dm/zengate)](https://www.npmjs.com/package/zengate)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/developingchet/zengate/blob/main/LICENSE)
+
 **An OpenAI-compatible API for OpenCode's free Zen models: no Zen account or upstream API key needed.**
 
 Point any OpenAI SDK or tool at it and use models like `big-pickle`: Chat Completions, the Responses API, streaming, function calling, JSON output, and image, audio, video and PDF input. Source, docs and issues: **[github.com/developingchet/zengate](https://github.com/developingchet/zengate)**.
@@ -43,13 +48,13 @@ volumes:
 
 ## Configuration
 
-The key is stored in `/data/config.json` (mode 0600) on the volume. Everything else is set with environment variables, for example:
+The key is stored in `/data/config.json` (mode 0600) on the volume. Other settings are usually passed as environment variables; the most common ones:
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `API_KEY` | generated | Use your own key (at least 16 characters) instead of a generated one. |
 | `MAX_CONCURRENT` / `MAX_QUEUE` | `8` / `32` | Parallel generations, and how many requests may wait. |
-| `RATE_LIMIT_PER_MINUTE` | `120` | Per client IP (`0` turns it off). |
+| `RATE_LIMIT_PER_MINUTE` | `120` | Per client IP, IPv6 per /64 (`0` turns it off). |
 | `TRUST_PROXY` | `0` | Reverse-proxy hops to trust for client IPs. |
 | `LOG_LEVEL` / `LOG_JSON` | `info` / `false` | Log verbosity, and JSON-lines output. |
 | `OPENCODE_PROFILE` | `compatible` | Set to `chat` for the opt-in strict text-only profile described below. |
@@ -69,14 +74,14 @@ Upstream allowance exhaustion returns HTTP 429 with `upstream_quota_exhausted`; 
 ## Image details
 
 - Platforms: `linux/amd64`, `linux/arm64`.
-- Tags: `latest`, `1`, `1.4`, `1.4.0` (pre-releases only get their exact version tag).
+- Tags: each release gets its exact version (for example `1.4.2`) and moves `1.4`, `1` and `latest`; pre-releases get only their exact version tag.
 - Runs as the unprivileged `node` user, listens on port `8083`, and has a built-in health check on `/ready`.
 - Works with a read-only root filesystem: only `/tmp` and `/data` need to be writable.
 - The gateway's own traffic is plain HTTP. Publish the port on `127.0.0.1`, or put a TLS reverse proxy in front.
 
 ## Supply chain
 
-Every image is built in GitHub Actions, scanned with Trivy, signed with cosign (keyless) and carries a CycloneDX SBOM attestation and build provenance.
+Every image is built in GitHub Actions, scanned with Trivy, signed with cosign (keyless) and carries a CycloneDX SBOM attestation and build provenance. Verify with cosign 3 or later; cosign 2 cannot read the current signature format.
 
 ```bash
 cosign verify developingchet/zengate:1 \
