@@ -54,7 +54,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@opencode/cli": "2.2.6",
+    "@opencode/cli": "2.3.0",
     "express": "^5.1.0"
   },
   "overrides": {
