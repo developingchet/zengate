@@ -1,0 +1,33 @@
+name: Question
+description: Ask how to install, configure, verify or use zengate.
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The [README](https://github.com/developingchet/zengate#readme) covers installation, a first start,
+        client examples, configuration and troubleshooting, and [SUPPORT.md](https://github.com/developingchet/zengate/blob/main/SUPPORT.md)
+        says where each kind of question belongs.
+
+        Security problems in zengate are not reported in issues; use
+        [private vulnerability reporting](https://github.com/developingchet/zengate/security/advisories/new)
+        as [SECURITY.md](https://github.com/developingchet/zengate/blob/main/SECURITY.md) describes. Remove
+        API keys, request bodies and anything private from what you paste, and never post an unfixed
+        vulnerability in someone else's project here.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you tried
+      description: Commands, settings and the README or SUPPORT.md sections you have read.
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: zengate version, Node.js version, operating system and how you run it.
+      placeholder: 1.4.3, Node 24.8, Ubuntu 24.04, Docker

@@ -5,8 +5,12 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the report. For security problems, use the Security tab instead (see SECURITY.md).
-        Remove API keys and anything private from logs before pasting them.
+        Thanks for the report. Security problems in zengate are not reported here; use
+        [private vulnerability reporting](https://github.com/developingchet/zengate/security/advisories/new)
+        as [SECURITY.md](https://github.com/developingchet/zengate/blob/main/SECURITY.md) describes.
+
+        Before pasting logs or a request, remove API keys, backend passwords, request bodies and anything
+        private, and never post an unfixed vulnerability in someone else's project here.
   - type: input
     id: version
     attributes:
@@ -50,3 +54,12 @@ body:
       label: Logs
       description: Gateway output, ideally with `LOG_LEVEL=debug`.
       render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: Everything above is free of keys, request bodies and private data, and of unfixed vulnerabilities in someone else's project.
+          required: true
+        - label: This is not a security problem in zengate itself.
+          required: true

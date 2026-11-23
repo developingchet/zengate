@@ -21,6 +21,7 @@ flowchart LR
 
 - [How it works](#how-it-works-and-why-it-is-keyless)
 - [Install](#install)
+- [Verify the install](#verify-the-install)
 - [Use it from your client](#use-it-from-your-client)
 - [API compatibility](#api-compatibility)
 - [Configuration](#configuration)
@@ -29,6 +30,7 @@ flowchart LR
 - [Security](#security)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
+- [Support](#support)
 
 ## How it works (and why it is keyless)
 
@@ -168,6 +170,23 @@ zengate --help           # also -h or help
 zengate --version        # also -v or version
 ```
 
+### Verify the install
+
+With the gateway running, check readiness before sending a request:
+
+```bash
+curl -fsS http://127.0.0.1:8083/ready
+```
+
+A ready managed backend answers HTTP 200 with `{"status":"ready","backend":"managed"}`. While it starts or
+shuts down, the same URL answers 503 with `status` set to `starting` or `stopping`. `/ready` and `/health`
+need no key and have no `/v1` prefix; `/health` returns `{"status":"ok"}`.
+
+Then send one request with the key from your config file (see
+[Use it from your client](#use-it-from-your-client)). A missing or wrong key returns `401 invalid_api_key`
+unless you set `ALLOW_NO_AUTH`, which is a useful negative check that authentication is on. The
+[Troubleshooting](#troubleshooting) table lists the other error codes.
+
 ### Running without a key
 
 If only trusted local programs can reach the port, you can turn authentication off explicitly:
@@ -177,6 +196,22 @@ ALLOW_NO_AUTH=true zengate
 ```
 
 The gateway warns at startup when auth is off. Keep `HOST=127.0.0.1` in that case: with auth off, any local process can use the API, and so can any web page if you enable CORS.
+
+### Update, roll back and remove
+
+| Install | Update | Roll back | Remove |
+|---|---|---|---|
+| npm global | `npm update -g zengate` | `npm install -g zengate@<version>` | `npm uninstall -g zengate` |
+| npx | resolves the latest version on each run | `npx zengate@<version>` | no global install (npx keeps a cache under `~/.npm/_npx`) |
+| Docker / Compose | pull the new tag and recreate the container | pin `developingchet/zengate:<version>` | `docker rm -f zengate` and `docker volume rm zengate`, or `docker compose down -v` |
+| From source | `git pull && npm ci` | `git checkout <tag> && npm ci` | remove the clone |
+
+The config file and its generated key live outside the npm package and the image (for a source checkout it is
+`config.json` in the project folder), so uninstalling the package or deleting a container does not remove
+them. Delete the config file yourself if you no longer want that key, and keep a copy before rolling back if
+you want to reuse it. Stored responses live in memory and disappear on restart, so an update does not migrate
+them. [CHANGELOG.md](CHANGELOG.md) lists behaviour and configuration changes between versions; read it
+before moving to a new major or minor release.
 
 ## Use it from your client
 
@@ -202,6 +237,8 @@ r = client.chat.completions.create(model="big-pickle", messages=[{"role": "user"
 print(r.choices[0].message.content)
 ```
 
+Expected: the model's reply printed as one or more lines of text.
+
 **JavaScript / TypeScript**
 
 ```js
@@ -211,6 +248,8 @@ const stream = await client.responses.create({ model: "big-pickle", input: "Writ
 for await (const event of stream) if (event.type === "response.output_text.delta") process.stdout.write(event.delta);
 ```
 
+Expected: the haiku streamed to stdout as text deltas arrive.
+
 **curl**
 
 ```bash
@@ -218,6 +257,9 @@ curl http://127.0.0.1:8083/v1/chat/completions \
   -H "Authorization: Bearer $OPENAI_API_KEY" -H "Content-Type: application/json" \
   -d '{"model":"big-pickle","messages":[{"role":"user","content":"Hello!"}]}'
 ```
+
+Expected: an HTTP 200 JSON body with `choices[0].message.content` holding the model's reply. Without a valid
+key, the same request returns `401 invalid_api_key`.
 
 ## API compatibility
 
@@ -403,7 +445,16 @@ Code map:
 - `src/openai/`: request parsing, prompt building, media and attachment downloads, streaming, and the Chat, Responses and Completions handlers.
 - `src/server/`: Express app, auth, CORS, limits and errors.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose changes and cut releases, and [CHANGELOG.md](CHANGELOG.md) for release notes.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose changes and cut releases, [AGENTS.md](AGENTS.md)
+for the shared coding-agent guide and [CHANGELOG.md](CHANGELOG.md) for release notes.
+
+## Support
+
+Questions, bugs and feature ideas go through the
+[issue forms](https://github.com/developingchet/zengate/issues/new/choose); [SUPPORT.md](SUPPORT.md) says
+which one to use and what to leave out of a public report. Vulnerabilities in zengate go through
+[private vulnerability reporting](https://github.com/developingchet/zengate/security/advisories/new), never a
+public issue; see [SECURITY.md](SECURITY.md).
 
 ## License
 

@@ -2,6 +2,15 @@ name: Feature request
 description: Suggest an improvement or missing OpenAI API feature
 labels: [enhancement]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem first; a proposal is easier to agree on once the problem is clear. Security
+        problems in zengate are not reported here; use
+        [private vulnerability reporting](https://github.com/developingchet/zengate/security/advisories/new)
+        as [SECURITY.md](https://github.com/developingchet/zengate/blob/main/SECURITY.md) describes. Keep
+        keys, request bodies, private data and unfixed vulnerabilities in someone else's project out of the
+        request.
   - type: textarea
     id: problem
     attributes:
@@ -14,6 +23,18 @@ body:
     attributes:
       label: Proposed solution
   - type: textarea
+    id: use_case
+    attributes:
+      label: Who needs this?
+      description: The client, deployment or workflow that would use it, and what it would do with the result.
+  - type: textarea
     id: alternatives
     attributes:
       label: Alternatives you considered
+  - type: textarea
+    id: risks
+    attributes:
+      label: Effect on the security model
+      description: Would this change authentication, the managed backend's tool denial, the strict chat boundary, stored responses, config defaults or what is logged? Say why that is safe, or write "none".
+    validations:
+      required: true
