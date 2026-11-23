@@ -20,9 +20,14 @@ Please include:
 - the relevant configuration, with keys removed
 - steps to reproduce, and the impact you expect
 
-GitHub keeps the report confidential until a fix is released.
+GitHub keeps the report confidential until the advisory is published.
+
+Reproduce a problem only in a gateway and systems you own or are authorized to test. Do not include third-party
+code, request bodies from other people, or an unfixed vulnerability in someone else's project in a report.
 
 ## Response timeline
+
+These are targets, not guarantees:
 
 - Acknowledgement within 3 business days.
 - A status update within 7 business days.

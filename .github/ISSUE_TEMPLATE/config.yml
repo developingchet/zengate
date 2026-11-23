@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Usage and support
+    url: https://github.com/developingchet/zengate/blob/main/SUPPORT.md
+    about: Where to ask a question, report a bug or propose a change.
   - name: Security vulnerability
     url: https://github.com/developingchet/zengate/security/advisories/new
     about: Report security problems privately, not as a public issue.

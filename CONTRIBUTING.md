@@ -7,6 +7,8 @@ Thanks for helping improve zengate. Bug reports, fixes and docs improvements are
 - For a bug, open an issue with the version, how you run it and the steps to reproduce.
 - For a larger change or a new feature, open an issue first so we can agree on the approach.
 - For a security problem, **do not open an issue**. Follow [SECURITY.md](SECURITY.md) instead.
+- [AGENTS.md](AGENTS.md) is the shared guide for coding agents; [SUPPORT.md](SUPPORT.md) says where each
+  kind of question belongs. Keep `CLAUDE.md`, `CLAUDE.local.md` and `.claude/` local and ignored.
 
 ## Development setup
 
@@ -22,6 +24,7 @@ npm start          # creates config.json with a key on first start
 Checks (CI runs lint, tests with coverage and the backend contract on Linux and Windows, and the audit on Linux):
 
 ```bash
+npm run verify     # lint plus the test suite
 npm run lint       # syntax, file size and hygiene checks
 npm test           # unit, integration and property-based tests against a fake OpenCode server
 npm run test:coverage
@@ -50,7 +53,8 @@ npm run test:backend-contract  # bundled real CLI, synthetic local provider
 ## Commits and pull requests
 
 - Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`, `perf:`, `ci:`.
-- Keep pull requests focused on one change, fill in the template, and make sure CI is green.
+- Keep pull requests focused on one change, fill in the template, and make sure CI is green. A pull request
+  needs one approving review, the required CI checks and an up-to-date branch before it merges.
 - `main` is protected: changes land through pull requests with linear history, and CI (tests on Linux and Windows, the dependency audit, the Docker build and scan, and the Socket scan) must pass, with no high-severity CodeQL alerts.
 - The maintainer aims to review pull requests within **one week**.
 
